@@ -62,10 +62,14 @@ type Runtime struct {
 	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
-// Target couples the editable spec with its runtime state.
+// Target couples the editable spec with its runtime state. Custom icons are
+// stored alongside the spec so a generated package is reproducible after a
+// manager restart; an empty pair means the built-in default icon.
 type Target struct {
-	Spec    spec.ProxySpec `json:"spec"`
-	Runtime Runtime        `json:"runtime"`
+	Spec          spec.ProxySpec `json:"spec"`
+	Runtime       Runtime        `json:"runtime"`
+	CustomIcon64  []byte         `json:"custom_icon_64,omitempty"`
+	CustomIcon256 []byte         `json:"custom_icon_256,omitempty"`
 }
 
 // Settings are manager-wide defaults for newly suggested appnames. They do

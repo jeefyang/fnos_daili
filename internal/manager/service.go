@@ -3,8 +3,10 @@
 package manager
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -21,6 +23,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/jeefyang/fnos_daili/internal/cli"
+	"github.com/jeefyang/fnos_daili/internal/icon"
 	"github.com/jeefyang/fnos_daili/internal/spec"
 	"github.com/jeefyang/fnos_daili/internal/state"
 )
@@ -89,6 +92,8 @@ type SpecInput struct {
 	SkipTLSVerify bool       "json:\"skip_tls_verify\""
 	AllowLoopback bool       "json:\"allow_loopback\""
 	BasicAuth     *AuthInput "json:\"basic_auth,omitempty\""
+	IconData      string     "json:\"icon_data,omitempty\""
+	RemoveIcon    bool       "json:\"remove_icon,omitempty\""
 }
 
 // AuthView never contains a password or hash.
@@ -116,6 +121,7 @@ type SpecView struct {
 	SkipTLSVerify bool      "json:\"skip_tls_verify\""
 	AllowLoopback bool      "json:\"allow_loopback\""
 	BasicAuth     *AuthView "json:\"basic_auth,omitempty\""
+	HasIcon       bool      "json:\"has_icon\""
 }
 
 // TargetView is one list row.
@@ -263,6 +269,10 @@ func (s *Service) Create(in SpecInput) (TargetView, error) {
 	if err != nil {
 		return TargetView{}, err
 	}
+	set, hasIcon, err := iconFromInput(in)
+	if err != nil {
+		return TargetView{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.byAppLocked(sp.AppName) != nil {
@@ -283,6 +293,10 @@ func (s *Service) Create(in SpecInput) (TargetView, error) {
 			UpdatedAt: now,
 		},
 	}
+	if hasIcon {
+		t.CustomIcon64 = set.Icon64
+		t.CustomIcon256 = set.Icon256
+	}
 	s.st.Targets = append(s.st.Targets, t)
 	if err := s.saveLocked(); err != nil {
 		return TargetView{}, err
@@ -292,6 +306,10 @@ func (s *Service) Create(in SpecInput) (TargetView, error) {
 
 // Update replaces the editable spec. appname is immutable.
 func (s *Service) Update(id string, in SpecInput) (TargetView, error) {
+	set, hasIcon, err := iconFromInput(in)
+	if err != nil {
+		return TargetView{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t := s.findLocked(id)
@@ -310,7 +328,19 @@ func (s *Service) Update(id string, in SpecInput) (TargetView, error) {
 	sp.Port = t.Spec.Port
 	old := t.Spec
 	t.Spec = sp
-	if isInstalledState(t.Runtime.State) && !sameInstallInput(old, sp) {
+	iconChanged := false
+	if hasIcon {
+		if in.RemoveIcon {
+			iconChanged = len(t.CustomIcon64) > 0 || len(t.CustomIcon256) > 0
+			t.CustomIcon64 = nil
+			t.CustomIcon256 = nil
+		} else {
+			iconChanged = !bytes.Equal(t.CustomIcon64, set.Icon64) || !bytes.Equal(t.CustomIcon256, set.Icon256)
+			t.CustomIcon64 = set.Icon64
+			t.CustomIcon256 = set.Icon256
+		}
+	}
+	if isInstalledState(t.Runtime.State) && (!sameInstallInput(old, sp) || iconChanged) {
 		t.Runtime.NeedsReapply = true
 	}
 	t.Runtime.UpdatedAt = s.now()
@@ -386,6 +416,50 @@ func (s *Service) specFromInput(in SpecInput, existingAuth *spec.BasicAuth) (spe
 	return spec.NormalizeProxySpec(sp)
 }
 
+// iconFromInput decodes the optional data URL from the browser. remove_icon
+// and icon_data are mutually exclusive; a successful decode always returns a
+// complete 64/256 pair.
+func iconFromInput(in SpecInput) (icon.Set, bool, error) {
+	var zero icon.Set
+	if in.RemoveIcon && in.IconData != "" {
+		return zero, false, &spec.Error{Field: "icon", Message: "icon_data and remove_icon cannot be used together"}
+	}
+	if in.RemoveIcon {
+		return zero, true, nil
+	}
+	if in.IconData == "" {
+		return zero, false, nil
+	}
+	raw, err := decodeIconDataURL(in.IconData)
+	if err != nil {
+		return zero, false, &spec.Error{Field: "icon", Message: err.Error()}
+	}
+	set, err := icon.Normalize(raw)
+	if err != nil {
+		return zero, false, &spec.Error{Field: "icon", Message: err.Error()}
+	}
+	return set, true, nil
+}
+
+func decodeIconDataURL(s string) ([]byte, error) {
+	if len(s) > 4<<20 {
+		return nil, fmt.Errorf("icon data is too large")
+	}
+	comma := strings.IndexByte(s, ',')
+	if comma < 0 {
+		return nil, fmt.Errorf("icon must be a base64 data URL")
+	}
+	meta := s[:comma]
+	if !strings.HasPrefix(meta, "data:image/") || !strings.Contains(meta, ";base64") {
+		return nil, fmt.Errorf("icon must be a base64 data URL")
+	}
+	data, err := base64.StdEncoding.DecodeString(s[comma+1:])
+	if err != nil {
+		return nil, fmt.Errorf("icon is not valid base64: %w", err)
+	}
+	return data, nil
+}
+
 func sameInstallInput(a, b spec.ProxySpec) bool {
 	return a.AppName == b.AppName && a.DisplayName == b.DisplayName &&
 		a.Description == b.Description && a.Version == b.Version &&
@@ -440,7 +514,7 @@ func viewOf(t state.Target) TargetView {
 		Mode: t.Spec.Mode, EntryTitle: t.Spec.EntryTitle, UIType: t.Spec.UIType,
 		Port: t.Spec.Port, AllUsers: t.Spec.AllUsers, NoDisplay: t.Spec.NoDisplay, FileTypes: t.Spec.FileTypes,
 		InstallVolume: t.Spec.InstallVolume, SkipTLSVerify: t.Spec.SkipTLSVerify,
-		AllowLoopback: t.Spec.AllowLoopback,
+		AllowLoopback: t.Spec.AllowLoopback, HasIcon: len(t.CustomIcon256) > 0,
 	}
 	if t.Spec.BasicAuth != nil {
 		sp.BasicAuth = &AuthView{Username: t.Spec.BasicAuth.Username, HasPassword: t.Spec.BasicAuth.PasswordHash != ""}

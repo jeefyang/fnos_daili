@@ -95,6 +95,19 @@
             <textarea id="description" class="textarea" rows="2" maxlength="120" placeholder="通过代理访问 http://192.168.1.10:8123"></textarea>
             <div id="descError" class="error"></div>
           </div>
+          <div class="field">
+            <label>应用图标</label>
+            <div class="icon-row">
+              <img id="iconPreview" class="icon-preview" alt="图标预览">
+              <div class="icon-actions">
+                <input id="iconFile" type="file" accept="image/png,image/jpeg" hidden>
+                <button id="iconPick" class="btn sm" type="button">选择图片</button>
+                <button id="iconReset" class="btn sm ghost" type="button">恢复默认</button>
+                <div class="help">PNG/JPEG，建议正方形 256×256 以上，最大 2MB；保存时自动裁成 256 与 64 两档。</div>
+                <div id="iconError" class="error"></div>
+              </div>
+            </div>
+          </div>
           <details>
             <summary class="muted" style="cursor:pointer;font-size:12.5px">高级：版本号</summary>
             <div class="field" style="margin-top:12px;max-width:240px">

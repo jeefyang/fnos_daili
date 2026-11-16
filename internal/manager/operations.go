@@ -270,13 +270,20 @@ func (s *Service) buildPackage(t state.Target, opID string) (string, string, err
 	if len(s.cfg.ProxyBinary) == 0 {
 		return "", "", &cli.Error{Code: "missing_proxy_binary", Message: "托管台内没有代理二进制，无法生成安装包"}
 	}
+	icon64, icon256 := s.cfg.Icon64, s.cfg.Icon256
+	if len(t.CustomIcon64) > 0 {
+		icon64 = t.CustomIcon64
+	}
+	if len(t.CustomIcon256) > 0 {
+		icon256 = t.CustomIcon256
+	}
 	var buf strings.Builder
 	_, err := fpk.BuildProxy(&buf, fpk.BuildOptions{
 		Spec: t.Spec,
 		Assets: fpk.Assets{
 			ProxyBinary: s.cfg.ProxyBinary,
-			Icon64:      s.cfg.Icon64,
-			Icon256:     s.cfg.Icon256,
+			Icon64:      icon64,
+			Icon256:     icon256,
 		},
 		Platform: s.cfg.Platform,
 	})

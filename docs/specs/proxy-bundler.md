@@ -31,7 +31,7 @@
 - 非 HTTP(S) 协议（SSH/RDP/裸 TCP）。
 - 统一网关 `/app/<appname>` 入口（未验证可用，不再是产品入口）。
 - HTML 响应体重写、绝对 URL 改写、CSP 改写。
-- 自定义图标上传/抓 favicon；v1 只用内置默认 64/256 图标。
+- 抓取目标站 favicon；图标只支持上传 PNG/JPEG，缺省用内置默认 64/256 图标。
 - 批量导入导出、模板、多目标一次生成。
 - 实时健康检查、访问统计、自动失败重启。
 - 托管台自身的 WebSocket（CGI 不支持 Upgrade）；代理应用在独立端口上支持 WebSocket。
@@ -133,6 +133,8 @@ type BasicAuth struct {
 | `basic_auth` | 仅 reverse；用户名 1–64 字节，密码 8–72 字节；direct 下出现即校验失败 |
 | `skip_tls_verify` | 仅 reverse + https 有意义；http 下忽略 |
 | `allow_loopback` | 仅 reverse；打开只放行回环，不放行链路本地/多播/端口拒绝 |
+
+图标不属于 `ProxySpec`，而是 target 的可选附件：API 输入用 `icon_data`（base64 data URL，PNG/JPEG，≤2MB，≥64×64，≤16M 像素）或 `remove_icon`（二者互斥），输出用 `has_icon`。托管台在保存时把图统一裁成 256 与 64 两档 PNG，存 state 的 `custom_icon_64` / `custom_icon_256`；生成包时替换内置图标。
 
 ### 4.2 目标规范化
 
@@ -385,7 +387,7 @@ checksum=<md5(app.tgz)>
 - 不写 `install_type`、`arch`。
 - `desc` 不能含换行；如果用户描述有换行，替换为空格。
 - 入口 `url` 固定 `/`，`port` 写十进制端口字符串。
-- 图标：v1 使用内置默认 64/256；`ui/config` 的 `icon` 固定 `images/icon_{0}.png`，`{0}` 原样写，由飞牛按 DPI 代入 64/256。
+- 图标：target 有自定义图标时用 `custom_icon_64/256`，否则用内置默认 64/256；`ui/config` 的 `icon` 固定 `images/icon_{0}.png`，`{0}` 原样写，由飞牛按 DPI 代入 64/256。
 
 ### 5.4 app/ui/config
 
@@ -652,6 +654,8 @@ esac
 | POST | `/api/targets/{id}/apply` | 生成并安装/升级；body `{"kind":"install"|"upgrade"|"reinstall"}`，默认按状态推断 |
 | POST | `/api/targets/{id}/delete` | 卸载并删记录；异步 |
 | POST | `/api/targets/{id}/rollback` | 用 last-known-good 重装 |
+| GET | `/api/targets/{id}/icon?size=64` | 返回 target 的自定义图标（PNG）；无自定义图标 404 |
+| GET | `/api/default-icon?size=64` | 返回内置默认图标（PNG），用于表单预览 |
 | GET | `/api/targets/{id}/package` | 下载当前 fpk（0600，Content-Disposition） |
 | GET | `/api/targets/{id}/log?lines=200` | 返回脱敏后的最近日志 |
 | POST | `/api/targets/{id}/test-target` | 测试连通性；不阻断保存 |
@@ -667,6 +671,8 @@ esac
 - `network` 从 `X-Daili-Client-IP`（CGI shim 写入）→ `X-Forwarded-For` → `X-Real-IP` → `RemoteAddr` 取第一个合法 IP；私网/回环/链路本地为 `lan=true`，公网为 `false`，取不到为 null。仅用于入口提示，不参与鉴权。
 - `test-target` 用同一目标拦截；返回 `{reachable, status, elapsed_ms, error}`；错误只给类别。
 - `appnames/check` 规则：正则、保留名、state 冲突、`appcenter-cli list` 冲突。
+- 图标接口只返回 state 里的 PNG 字节；`size=64` 取 64 档，缺省 256 档；`Cache-Control: no-store`，避免换图后浏览器继续用旧图。
+- 创建/更新请求体上限 8MiB，容纳 2MiB 图片的 base64 与 JSON 开销。
 - 下载包只允许 state 里记录的路径，防目录穿越。
 - 日志接口按行读，最多 1000 行；脱敏 Authorization/Cookie/Set-Cookie/口令。
 
@@ -751,9 +757,9 @@ T2 的“端口 bind 预检”恢复：代理入口使用独立端口，分配�
 ### 10.1 四步向导
 
 1. **目标**：target_url 输入；test-target 按钮（非阻断）；格式错误才禁用下一步；反代模式显示“目标拦截”提示。
-2. **应用信息**：display_name、appname（预填 `全局前缀 + slug + 全局后缀 + "." + 4hex`，默认前缀 `proxy.`；可改，异步 check）、description、version（高级折叠，默认 1.0.0）。新建与编辑用同一个向导，但入口分开：新建从空白开始，编辑回填已有 target 并锁定 appname；不再有“新建/编辑”页签。
+2. **应用信息**：display_name、appname（预填 `全局前缀 + slug + 全局后缀 + "." + 4hex`，默认前缀 `proxy.`；可改，异步 check）、description、图标上传（PNG/JPEG，≤2MB，≥64×64；预览 64 档；可恢复默认；编辑时显示当前自定义图标）、version（高级折叠，默认 1.0.0）。新建与编辑用同一个向导，但入口分开：新建从空白开始，编辑回填已有 target 并锁定 appname；不再有“新建/编辑”页签。
 3. **入口与高级**：mode（reverse/direct）、ui_type（url/iframe）、all_users（默认 false）、no_display、entry_title、install_volume、skip_tls_verify（仅 https+reverse）、allow_loopback（仅 reverse）、Basic Auth（开关 + 用户名/密码，仅 reverse）；端口只读展示（新建时“生成时自动分配”，编辑时显示已分配端口）。
-4. **确认与生成**：摘要含入口端口与最终 URL；生成按钮；进度 5 步（校验 → 生成包 → 安装 → 启动 → 完成）；失败停在对应步骤，提供下载 fpk、查看日志、重试；成功后 toast 提示并自动回到列表。
+4. **确认与生成**：摘要含图标来源（自定义/默认）、入口端口与最终 URL；生成按钮；进度 5 步（校验 → 生成包 → 安装 → 启动 → 完成）；失败停在对应步骤，提供下载 fpk、查看日志、重试；成功后 toast 提示并自动回到列表。
 
 ### 10.2 列表
 

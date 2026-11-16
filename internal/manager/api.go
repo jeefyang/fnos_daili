@@ -34,6 +34,8 @@ func (s *Service) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/targets", s.handleCreate)
 	mux.HandleFunc("GET /api/targets/{id}", s.handleGet)
 	mux.HandleFunc("PUT /api/targets/{id}", s.handleUpdate)
+	mux.HandleFunc("GET /api/targets/{id}/icon", s.handleTargetIcon)
+	mux.HandleFunc("GET /api/default-icon", s.handleDefaultIcon)
 	mux.HandleFunc("POST /api/targets/{id}/apply", s.handleApply)
 	mux.HandleFunc("POST /api/targets/{id}/delete", s.handleDelete)
 	mux.HandleFunc("POST /api/targets/{id}/rollback", s.handleRollback)
@@ -198,6 +200,45 @@ func (s *Service) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, v)
+}
+
+// handleDefaultIcon serves the built-in icon so the browser can preview it
+// without bundling a second copy of the PNG in the JS.
+func (s *Service) handleDefaultIcon(w http.ResponseWriter, r *http.Request) {
+	data := s.cfg.Icon256
+	if r.URL.Query().Get("size") == "64" {
+		data = s.cfg.Icon64
+	}
+	serveIcon(w, data)
+}
+
+func (s *Service) handleTargetIcon(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	t := s.findLocked(r.PathValue("id"))
+	var data []byte
+	if t != nil {
+		data = t.CustomIcon256
+		if r.URL.Query().Get("size") == "64" {
+			data = t.CustomIcon64
+		}
+	}
+	s.mu.Unlock()
+	if len(data) == 0 {
+		writeError(w, http.StatusNotFound, "no_icon", "该应用使用默认图标")
+		return
+	}
+	serveIcon(w, data)
+}
+
+func serveIcon(w http.ResponseWriter, data []byte) {
+	if len(data) == 0 {
+		writeError(w, http.StatusNotFound, "no_icon", "没有可用图标")
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 func (s *Service) handleUpdate(w http.ResponseWriter, r *http.Request) {
@@ -512,7 +553,9 @@ func parseClientIP(raw string) net.IP {
 
 func decodeJSON(r *http.Request, out any) error {
 	defer io.Copy(io.Discard, r.Body)
-	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	// Icon uploads arrive as a base64 data URL; 8 MiB covers a 2 MiB image
+	// plus JSON overhead while still bounding the request body.
+	dec := json.NewDecoder(io.LimitReader(r.Body, 8<<20))
 	dec.DisallowUnknownFields()
 	return dec.Decode(out)
 }

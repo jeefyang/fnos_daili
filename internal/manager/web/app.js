@@ -16,6 +16,9 @@
     lastOpPort: 0,
     editPort: 0,
     editVolume: '',
+    editHasIcon: false,
+    iconData: '',
+    iconRemove: false,
     settings: { appname_prefix: 'proxy.', appname_suffix: '' },
     network: { known: false, lan: null, client_ip: '' }
   };
@@ -385,6 +388,48 @@
     if (name === 'list') renderNetBanner();
   }
 
+  function setIconPreview(src) {
+    var img = $('iconPreview');
+    if (img) img.src = src;
+  }
+
+  function defaultIconURL() { return apiURL('/api/default-icon'); }
+
+  function onIconPick() {
+    var fileInput = $('iconFile');
+    var errBox = $('iconError');
+    if (!fileInput || !fileInput.files || !fileInput.files.length) return;
+    var file = fileInput.files[0];
+    errBox.textContent = '';
+    if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
+      errBox.textContent = '只支持 PNG 或 JPEG 图片';
+      fileInput.value = '';
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      errBox.textContent = '图片不能超过 2MB';
+      fileInput.value = '';
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+      state.iconData = String(reader.result || '');
+      state.iconRemove = false;
+      setIconPreview(state.iconData);
+      errBox.textContent = '';
+    };
+    reader.onerror = function () { errBox.textContent = '读取图片失败，请重试'; };
+    reader.readAsDataURL(file);
+  }
+
+  function onIconReset() {
+    state.iconData = '';
+    state.iconRemove = !!state.editId && state.editHasIcon;
+    $('iconFile').value = '';
+    $('iconError').textContent = '';
+    setIconPreview(defaultIconURL());
+  }
+
   function resetForm() {
     state.editId = null;
     state.originalAppname = '';
@@ -393,6 +438,12 @@
     state.lastPackage = null;
     state.editPort = 0;
     state.editVolume = '';
+    state.editHasIcon = false;
+    state.iconData = '';
+    state.iconRemove = false;
+    $('iconFile').value = '';
+    $('iconError').textContent = '';
+    setIconPreview(defaultIconURL());
     $('target_url').value = '';
     $('display_name').value = '';
     $('appname').value = '';
@@ -441,6 +492,10 @@
     state.originalAppname = t.spec.appname;
     state.editPort = t.spec.port || 0;
     state.editVolume = t.spec.install_volume || '1';
+    state.editHasIcon = !!t.spec.has_icon;
+    if (state.editHasIcon) {
+      setIconPreview(apiURL('/api/targets/' + encodeURIComponent(t.spec.id) + '/icon?v=' + Date.now()));
+    }
     state.appnameTouched = true;
     state.lastOpAppName = t.spec.appname;
     state.lastOpPort = t.spec.port || 0;
@@ -626,6 +681,8 @@
     if (state.mode === 'reverse' && $('auth_on').checked) {
       input.basic_auth = { username: $('auth_user').value.trim(), password: $('auth_pass').value };
     }
+    if (state.iconData) input.icon_data = state.iconData;
+    if (state.iconRemove) input.remove_icon = true;
     return input;
   }
 
@@ -639,6 +696,7 @@
       ['appname', d.appname],
       ['入口', state.editPort ? entryURL(d.appname, state.editPort) : '生成时自动分配端口'],
       ['安装卷', '卷 ' + d.install_volume],
+      ['图标', state.iconData ? '自定义（待保存）' : (state.iconRemove ? '恢复默认' : (state.editHasIcon ? '当前为自定义' : '默认'))],
       ['Basic Auth', d.basic_auth ? ('开启 · ' + d.basic_auth.username) : '关闭'],
       ['跳过证书校验', d.skip_tls_verify ? '是' : '否'],
       ['允许本机目标', d.allow_loopback ? '是' : '否'],
@@ -845,6 +903,9 @@
     $('listBody').addEventListener('click', onListClick);
     $('testBtn').addEventListener('click', testTarget);
     $('checkNameBtn').addEventListener('click', checkName);
+    $('iconPick').addEventListener('click', function () { $('iconFile').click(); });
+    $('iconFile').addEventListener('change', onIconPick);
+    $('iconReset').addEventListener('click', onIconReset);
     $('nextBtn').addEventListener('click', next);
     $('backBtn').addEventListener('click', function () { if (state.step > 1) showStep(state.step - 1); });
     $('cancelBtn').addEventListener('click', function () {
