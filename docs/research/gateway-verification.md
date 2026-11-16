@@ -31,13 +31,13 @@ command -v python3
 python3 --version
 uname -a
 cat /etc/os-release
-appcenter-cli list 2>&1 | head -n 20
+sudo appcenter-cli list 2>&1 | head -n 20
 ss -ltn | grep -E ':5666|:5667|:28998' || true
 ~~~
 
 记录：飞牛版本、`appcenter-cli` 路径、`python3` 路径与版本、5666/5667 是否 HTTPS。
 
-> V1 已确认：`/usr/local/bin/appcenter-cli` 存在；非 root 会因 `rpcbroker` 权限失败；`install-local` 不可用，必须用 `install-fpk`。
+> V1 已确认：`/usr/local/bin/appcenter-cli` 存在；非 root 会因 `rpcbroker` 权限失败；`install-local` 不可用，必须用 `install-fpk`。**所有 CLI 调用都要 `sudo`；漏 `sudo` 可能在命令末尾 panic，但前面的 install 已经成功。**
 
 ## 2. 安装（A → B → C）
 
@@ -46,9 +46,9 @@ cd /tmp
 curl -fL -o gwprobe.fpk \
   https://raw.githubusercontent.com/jeefyang/fnos_daili/main/docs/research/fixtures/gateway-probe/gwprobe.fpk
 sha256sum gwprobe.fpk
-appcenter-cli install-fpk -v 1 /tmp/gwprobe.fpk 2>&1; echo "[install=$?]"
-appcenter-cli list 2>&1 | grep gwprobe || true
-appcenter-cli status gwprobe 2>&1; echo "[status=$?]"
+sudo appcenter-cli install-fpk -v 1 /tmp/gwprobe.fpk 2>&1; echo "[install=$?]"
+sudo appcenter-cli list 2>&1 | grep gwprobe || true
+sudo appcenter-cli status gwprobe 2>&1; echo "[status=$?]"
 ~~~
 
 `starting` 可能持续数分钟；每 30 秒查一次，直到 `running` 或明确失败。**记录完整 stdout/stderr 与退出码，不能只看退出码。**
@@ -67,7 +67,7 @@ tail -n 80 /vol1/@appdata/gwprobe/gateway-probe.log 2>&1 || true
 
 期望：socket 在 `target/app.sock`（或 `/vol1/@appcenter/gwprobe/app.sock`）；`ss -ltnp` 没有该应用的 TCP 监听。
 
-若 A 失败：记录错误码（10111 / 10500 / 10237 等）与完整输出；`appcenter-cli uninstall gwprobe` 清理，再用 `gwprobe2.fpk` 重复；仍失败再换 `gwprobe3.fpk`。三个都失败就停止并回填 #11。
+若 A 失败：记录错误码（10111 / 10500 / 10237 等）与完整输出；`sudo appcenter-cli uninstall gwprobe` 清理，再用 `gwprobe2.fpk` 重复；仍失败再换 `gwprobe3.fpk`。三个都失败就停止并回填 #11。
 
 ## 3. 会话矩阵
 
@@ -173,9 +173,9 @@ XFO/CSP：
 
 ~~~bash
 for a in gwprobe gwprobe2 gwprobe3; do
-  appcenter-cli uninstall "$a" 2>&1; echo "[$a uninstall=$?]"
+  sudo appcenter-cli uninstall "$a" 2>&1; echo "[$a uninstall=$?]"
 done
-appcenter-cli list 2>&1 | grep -E 'gwprobe' || echo "all gateway probes gone"
+sudo appcenter-cli list 2>&1 | grep -E 'gwprobe' || echo "all gateway probes gone"
 ~~~
 
 卸载前若 `starting`，先等 `running` 或先 `stop`；10500 表示“还没起来”，不是永久失败。
