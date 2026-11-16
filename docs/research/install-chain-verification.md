@@ -8,13 +8,24 @@
 
 | 项 | 值 |
 | --- | --- |
-| 飞牛版本 | 待填（`cat /etc/version`） |
-| 内核 / 架构 | 待填（`uname -a`） |
-| 执行身份 | 待填（`id`） |
-| appcenter-cli 路径 | 待填 |
-| appcenter-cli 权限/属主 | 待填（`ls -l`） |
-| CLI 版本/哈希 | 待填（`--version`、`sha256sum`） |
-| 默认卷 | 待填（`default-volume`） |
+| 飞牛版本 | Debian 12 (bookworm)；`/etc/version` 不存在，fnOS 版本待 root 确认 |
+| 内核 / 架构 | Linux 6.18.18.c1186-trim，x86_64 |
+| 执行身份 | uid=1000(jeef)，gid=1001(Users)，附加组 1000(Administrators)；非 root |
+| appcenter-cli 路径 | `/usr/local/bin/appcenter-cli`；`/var/apps/appcenter/target/bin/appcenter-cli` 与 `/usr/bin/appcenter-cli` 不存在 |
+| appcenter-cli 权限/属主 | `-rwxr-xr-x root:root`，8,005,856 字节，ELF 64-bit x86-64，动态链接，stripped |
+| CLI 哈希 | `3d7cca24523d5d03c1ad9028ca332b4410319e837a2d508d80bccb7661482626` |
+| fnpack | `/usr/local/bin/fnpack` 存在 |
+| 默认卷 | 待 root 确认；可见卷 /vol1、/vol2、/vol3（另有 /vol00、/vol02） |
+
+## 第一段观察（非 root）
+
+`appcenter-cli` 存在，但以 uid 1000 执行任何子命令都在进入参数解析前 panic，退出码 2：
+
+```
+panic: ApplyPermission for '[com.trim.sysinfo com.trim.main]' error, dial unix /run/trim_app_cgi/rpcbroker: connect: permission denied
+```
+
+这不是“CLI 已被移除”，而是 CLI 初始化 trimrpc 时需要访问 `/run/trim_app_cgi/rpcbroker`。因此第一段只能证明：CLI 文件在、路径与哈希确定、非 root 不可用；子命令列表与参数必须用 root 重跑。
 
 ## 第一段：只读侦察（先跑，不安装）
 
