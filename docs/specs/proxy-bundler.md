@@ -399,7 +399,6 @@ checksum=<md5(app.tgz)>
       "icon": "images/icon_{0}.png",
       "type": "iframe",
       "protocol": "http",
-      "port": "",
       "url": "/cgi/ThirdParty/daili.manager/index.cgi/",
       "allUsers": false,
       "noDisplay": false
@@ -428,7 +427,7 @@ checksum=<md5(app.tgz)>
 ```
 
 - 入口 key 必须等于 `desktop_applaunchname`，否则 fnpack/应用中心可能拒绝；V1 证明应用中心不校验跨文件一致，所以生成器必须自己校验。
-- 代理入口 `port` 必须等于 manifest 的 `service_port`；`url` 为 `/`。托管台入口 `port` 为空串、`url` 为 CGI 路径。
+- 代理入口 `port` 必须等于 manifest 的 `service_port`；`url` 为 `/`。托管台入口不写 `port` 字段（不是空串）；`url` 为 CGI 路径。
 - `protocol` 写 `http`：代理端口不启 TLS；飞牛桌面 HTTPS 跳 HTTP 是顶层导航。
 - `allUsers` 默认 false；`noDisplay` 默认 false。
 - 只有 `file_types` 非空时才写 `fileTypes` 数组；默认不写。

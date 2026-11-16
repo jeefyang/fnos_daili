@@ -2,6 +2,7 @@ package fpk
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 )
 
@@ -30,6 +31,34 @@ func TestBuildManagerVerifies(t *testing.T) {
 	}
 	if got.ManagerSize == 0 || got.ProxySize == 0 {
 		t.Fatalf("sizes = %+v", got)
+	}
+}
+
+func TestManagerUIConfigOmitsPort(t *testing.T) {
+	var buf bytes.Buffer
+	if _, err := BuildManager(&buf, ManagerOptions{
+		ManagerBinary: elf64(62, false),
+		ProxyBinary:   elf64(62, false),
+		Icon64:        pngBytes(t, 64),
+		Icon256:       pngBytes(t, 256),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	members, err := readPackage(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := readManagerAppTGZ(members["app.tgz"].data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ui map[string]map[string]map[string]any
+	if err := json.Unmarshal(app["ui/config"].data, &ui); err != nil {
+		t.Fatal(err)
+	}
+	entry := ui[".url"]["daili.manager.main"]
+	if _, ok := entry["port"]; ok {
+		t.Fatalf("ui/config entry must omit port: %v", entry)
 	}
 }
 

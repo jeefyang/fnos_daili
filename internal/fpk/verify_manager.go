@@ -120,6 +120,9 @@ func VerifyManager(data []byte) (VerifyResult, error) {
 	if entry["url"] != wantURL {
 		return zero, fmt.Errorf("ui/config url = %v, want %q", entry["url"], wantURL)
 	}
+	if _, ok := entry["port"]; ok {
+		return zero, fmt.Errorf("ui/config must omit port for a CGI entry")
+	}
 	sum256 := sha256.Sum256(data)
 	return VerifyResult{
 		AppName:              spec.ManagerAppName,

@@ -20,7 +20,7 @@
 
 托管台与所有代理应用都只使用 CGI 入口：
 
-- `app/ui/config` 的 `url` 固定 `/cgi/ThirdParty/<appname>/index.cgi/`，`port` 空串。
+- `app/ui/config` 的 `url` 固定 `/cgi/ThirdParty/<appname>/index.cgi/`，不写 `port` 字段（空串 `port` 会让入口失效）。
 - manifest 不写 `service_port`，`checkport=false`。
 - `cmd/install_callback` 在 `TRIM_APPDEST/ui/index.cgi` 写入 shim，exec 包内二进制 `--mode cgi --socket <TRIM_PKGVAR>/<app>.sock`。
 - 常驻进程只监听 Unix socket，不监听 TCP。

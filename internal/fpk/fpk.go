@@ -258,7 +258,7 @@ type uiEntry struct {
 	Icon      string   `json:"icon"`
 	Type      string   `json:"type"`
 	Protocol  string   `json:"protocol"`
-	Port      string   `json:"port"`
+	Port      string   `json:"port,omitempty"`
 	URL       string   `json:"url"`
 	AllUsers  bool     `json:"allUsers"`
 	NoDisplay bool     `json:"noDisplay"`
