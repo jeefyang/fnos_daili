@@ -62,14 +62,21 @@ var (
 )
 
 // NormalizeProxySpec validates fields and fills defaults. It does not persist anything.
+func ValidateAppName(appname string) error {
+	if len(appname) < 3 || len(appname) > 32 || !appNameRE.MatchString(appname) {
+		return invalid("appname", "must be 3-32 bytes, start with a letter or digit, and contain only letters, digits, '.', '_' or '-'")
+	}
+	if appname == ManagerAppName {
+		return invalid("appname", "is reserved for the manager")
+	}
+	return nil
+}
+
 func NormalizeProxySpec(in ProxySpec) (ProxySpec, error) {
 	out := in
 
-	if len(out.AppName) < 3 || len(out.AppName) > 32 || !appNameRE.MatchString(out.AppName) {
-		return out, invalid("appname", "must be 3-32 bytes, start with a letter or digit, and contain only letters, digits, '.', '_' or '-'")
-	}
-	if out.AppName == ManagerAppName {
-		return out, invalid("appname", "is reserved for the manager")
+	if err := ValidateAppName(out.AppName); err != nil {
+		return out, err
 	}
 
 	if !validText(out.DisplayName, 1, 32) {
