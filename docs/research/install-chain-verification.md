@@ -251,6 +251,8 @@ appcenter-cli list 2>&1 | grep verify.probe || true
   - fpk 内是 `app.tgz`，不是展开的 `app/`；`app/ui/config` 在 `app.tgz` 里。
 - 失败注入（13:32）：把 `manifest.desktop_applaunchname` 改成 `verify.probe.NOPE`，`app.tgz` 内 `app/ui/config` 的键仍是 `verify.probe.Application`；`install-fpk` 仍安装成功并进入 starting。**不校验 manifest 与 UI config 的跨文件一致性**；T2 必须在生成时自己保证一致，否则能装上但桌面图标可能打不开。
 - 恢复尝试：badname 处于 starting 时 uninstall 又报 10500，随后 install 因已安装被拒（`Application [verify.probe] is installed.`），状态最终 running。说明“start 未完成”时任何卸载/重装都要先等 running，且失败后不能假设应用已清空。
+- `app.tgz` 结构（13:38 实测）：根下直接是 `server`、`ui/`、`www`、`config/`，**没有 `app/` 前缀**；`ui/config` 在 `app.tgz` 内。T2 生成时要把 `<appname>.main` 写进 `app.tgz` 的 `ui/config`，不是外层 fpk 的 `app/ui/config`。
+- `appcenter-cli status <appname>` 的状态文本走 stderr：`s=$(appcenter-cli status x)` 会得到空串，轮询必须用 `2>&1`（或解析 `list` 的状态列）。13:38 的等待循环因此空转 30 次，但 uninstall 仍成功，说明 stopping/starting 状态本身可被 uninstall 处理，只是 10500 时会拒绝。
 
 ## 结果与结论
 
