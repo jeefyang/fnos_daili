@@ -56,4 +56,4 @@ fnOS 应用在桌面或应用中心暴露出来的打开方式，带标题、图
 
 ## 安装 (Install)
 
-把生成的 fpk 交给飞牛应用中心并装上的过程，走 `appcenter-cli`；具体用 `install-local` 还是 `install-fpk` 由 T2/V1 核对后定。
+把生成的 fpk 交给飞牛应用中心并装上的过程，走 `appcenter-cli install-fpk -v <volume> <fpk>`。已安装时 `install-fpk` 拒绝而不是升级；升级 = 先 `uninstall <appname>` 再安装。
