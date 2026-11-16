@@ -630,7 +630,7 @@ esac
 - 不信任 `X-Trim-Userid`/`X-Trim-Isadmin`/`X-Trim-Username`。
 - 启动时生成/读取 `$TRIM_PKGVAR/csrf.token`（32 字节随机，hex，0600）。
 - `GET /` 设置 cookie `daili_csrf`：`HttpOnly; SameSite=Strict; Path=/cgi/ThirdParty/daili.manager/index.cgi/`，HTTPS 时加 `Secure`；HTML 里 `<meta name="csrf-token" content="...">`。
-- 所有非 GET 请求必须：`X-CSRF-Token` 等于 token；`Origin` 或 `Referer` 的 host 等于请求 Host；否则 403。
+- 所有非 GET 请求必须：`X-CSRF-Token` 等于 token；`Origin` 或 `Referer` 的 host（忽略端口）等于请求 Host，或 `X-Forwarded-Host` 中的某一跳；否则 403。CGI 由 fnOS Web 服务器转发、`HTTP_HOST` 可能是回环地址时，若没有 `X-Forwarded-Host`，允许回环上游放宽来源检查并记日志；CSRF token 仍是主校验。
 - API 不接受跨源；不加 CORS 头。
 - 已知限制：知道入口 URL 的普通登录用户可访问托管台；v1 不额外做口令/角色。需要更强隔离时另开票。
 

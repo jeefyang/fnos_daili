@@ -75,8 +75,14 @@ func (s *Service) withCSRF(next http.Handler) http.Handler {
 				return
 			}
 			if !sameOrigin(r) {
-				writeError(w, http.StatusForbidden, "origin_mismatch", "请求来源不匹配")
-				return
+				// CGI 由 fnOS 的 Web 服务器转发，HTTP_HOST 可能是 127.0.0.1；
+				// CSRF token 仍是主校验，这里只对回环上游放宽来源检查。
+				if r.Header.Get("X-Forwarded-Host") != "" || !isLoopbackHost(r.Host) {
+					s.logger.Printf("origin mismatch host=%q origin=%q referer=%q x-forwarded-host=%q", r.Host, r.Header.Get("Origin"), r.Header.Get("Referer"), r.Header.Get("X-Forwarded-Host"))
+					writeError(w, http.StatusForbidden, "origin_mismatch", "请求来源不匹配")
+					return
+				}
+				s.logger.Printf("origin mismatch allowed for cgi upstream host=%q origin=%q", r.Host, r.Header.Get("Origin"))
 			}
 		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -104,10 +110,43 @@ func sameOrigin(r *http.Request) bool {
 		return false
 	}
 	u, err := url.Parse(raw)
-	if err != nil {
+	if err != nil || u.Host == "" {
 		return false
 	}
-	return strings.EqualFold(u.Host, r.Host)
+	candidates := []string{r.Host}
+	for _, h := range r.Header.Values("X-Forwarded-Host") {
+		for _, part := range strings.Split(h, ",") {
+			candidates = append(candidates, strings.TrimSpace(part))
+		}
+	}
+	for _, h := range candidates {
+		if h != "" && equalHost(u.Host, h) {
+			return true
+		}
+	}
+	return false
+}
+
+// equalHost compares hostnames without ports. Origin omits default ports while
+// CGI HTTP_HOST may include them, and the fnOS web server may rewrite Host.
+func equalHost(a, b string) bool {
+	return strings.EqualFold(hostOnly(a), hostOnly(b))
+}
+
+func hostOnly(h string) string {
+	if host, _, err := net.SplitHostPort(h); err == nil {
+		return strings.Trim(host, "[]")
+	}
+	return strings.Trim(h, "[]")
+}
+
+func isLoopbackHost(h string) bool {
+	host := hostOnly(h)
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (s *Service) handleHealth(w http.ResponseWriter, r *http.Request) {

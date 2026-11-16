@@ -63,6 +63,43 @@ func TestAPIPostRequiresCSRFAndSameOrigin(t *testing.T) {
 	}
 }
 
+func TestAPIPostAcceptsForwardedHost(t *testing.T) {
+	s, _ := newTestService(t)
+	h := s.Handler(http.FileServerFS(UI()))
+	body := `{"appname":"daili.demo","display_name":"Demo","target_url":"http://192.168.1.10:8123","mode":"reverse"}`
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:9000/api/targets", strings.NewReader(body))
+	req.Header.Set("X-CSRF-Token", s.Token())
+	req.Header.Set("Origin", "https://jeefyang.fnos.net")
+	req.Header.Set("X-Forwarded-Host", "jeefyang.fnos.net, internal")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body)
+	}
+}
+
+func TestSameOriginIgnoresDefaultPort(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "http://example.com:443/api/targets", nil)
+	req.Header.Set("Origin", "https://example.com")
+	if !sameOrigin(req) {
+		t.Fatal("sameOrigin rejected matching host with different port")
+	}
+}
+
+func TestAPIPostAllowsLoopbackCGIUpstream(t *testing.T) {
+	s, _ := newTestService(t)
+	h := s.Handler(http.FileServerFS(UI()))
+	body := `{"appname":"daili.demo","display_name":"Demo","target_url":"http://192.168.1.10:8123","mode":"reverse"}`
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:9000/api/targets", strings.NewReader(body))
+	req.Header.Set("X-CSRF-Token", s.Token())
+	req.Header.Set("Origin", "https://public.example")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body)
+	}
+}
+
 func TestIndexInjectsCSRFToken(t *testing.T) {
 	s, _ := newTestService(t)
 	h := s.Handler(http.FileServerFS(UI()))
