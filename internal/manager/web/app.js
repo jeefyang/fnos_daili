@@ -10,7 +10,8 @@
     mode: 'reverse',
     volumesLoaded: false,
     polling: null,
-    lastPackage: null
+    lastPackage: null,
+    lastOpAppName: ''
   };
 
   function $(id) { return document.getElementById(id); }
@@ -147,7 +148,7 @@
         actions.push('<button class="btn sm" data-act="edit" data-id="' + esc(sp.id) + '" type="button">编辑</button>');
         actions.push('<button class="btn sm" data-act="apply" data-id="' + esc(sp.id) + '" type="button">' + (rt.state === 'draft' ? '安装' : '重新应用') + '</button>');
         if (rt.last_known_good_path) actions.push('<button class="btn sm" data-act="rollback" data-id="' + esc(sp.id) + '" type="button">回滚</button>');
-        if (rt.package_path) actions.push('<a class="btn sm" href="/api/targets/' + encodeURIComponent(sp.id) + '/package">下载</a>');
+        if (rt.package_path) actions.push('<a class="btn sm" href="' + apiURL('/api/targets/' + encodeURIComponent(sp.id) + '/package') + '">下载</a>');
         actions.push('<button class="btn sm" data-act="log" data-id="' + esc(sp.id) + '" type="button">日志</button>');
         actions.push('<button class="btn sm danger" data-act="delete" data-id="' + esc(sp.id) + '" type="button">删除</button>');
         return '<tr>' +
@@ -224,6 +225,9 @@
   }
 
   function applyTarget(id, kind) {
+    state.editId = id;
+    var t = findTarget(id);
+    if (t) state.lastOpAppName = t.spec.appname;
     api('/api/targets/' + id + '/apply', { method: 'POST', body: { kind: kind || '' } }).then(function (r) {
       switchTab('wizard');
       showStep(4);
@@ -588,9 +592,9 @@
         $('nextBtn').disabled = false;
         if (op.status === 'succeeded') {
           $('applyAlert').innerHTML = '<div class="alert ok">安装完成，应用已进入运行状态。</div>';
-          var links = '<a class="btn primary sm" target="_blank" rel="noopener" href="' + esc(entryURL($('appname').value)) + '">打开入口</a>';
+          var links = '<a class="btn primary sm" target="_blank" rel="noopener" href="' + esc(entryURL(state.lastOpAppName || $('appname').value)) + '">打开入口</a>';
           if (state.editId) {
-            links += ' <a class="btn sm" href="/api/targets/' + encodeURIComponent(state.editId) + '/package">下载 fpk</a>';
+            links += ' <a class="btn sm" href="' + apiURL('/api/targets/' + encodeURIComponent(state.editId) + '/package') + '">下载 fpk</a>';
             links += ' <button class="btn sm" type="button" id="backList">返回列表</button>';
           }
           $('applyLinks').innerHTML = links;
@@ -599,7 +603,7 @@
           loadListCached();
         } else {
           $('applyAlert').innerHTML = '<div class="alert err">操作失败：' + esc(op.error || '未知错误') + '</div>' +
-            '<div style="margin-top:10px"><a class="btn sm" href="/api/targets/' + encodeURIComponent(state.editId) + '/package">下载 fpk</a> <button class="btn sm" type="button" id="retryApply">重试安装</button></div>';
+            '<div style="margin-top:10px"><a class="btn sm" href="' + apiURL('/api/targets/' + encodeURIComponent(state.editId) + '/package') + '">下载 fpk</a> <button class="btn sm" type="button" id="retryApply">重试安装</button></div>';
           var r = $('retryApply');
           if (r) r.addEventListener('click', function () { applyTarget(state.editId, 'reinstall'); });
           loadListCached();
