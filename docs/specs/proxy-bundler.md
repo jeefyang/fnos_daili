@@ -516,7 +516,7 @@ esac
 代理应用不走 CGI；本节只描述托管台。`cmd/manager --mode cgi` 与通用 `proxy --mode cgi --socket <path>` 共用同一套 handler：
 
 1. 用 `net/http/cgi.Serve` 包一个 `http.Handler`。
-2. Handler 校验 `r.URL.Path` 以 `/index.cgi` 开头；截掉该前缀；空前缀时补 `/`。
+2. Handler 在 `r.URL.Path` 中找第一个 `/index.cgi`，要求其后为空或以 `/` 开头；截掉包括 `index.cgi` 在内的前缀；剩余为空时补 `/`。这样既接受 `/index.cgi/...`，也接受 fnOS 实际的 `/cgi/ThirdParty/<appname>/index.cgi/...`。
 3. 把请求体原样流式转发到 Unix socket；不预读、不限 body 大小。
 4. 连接 socket 超时 5s；失败返回 503 通用页，带 `X-Request-Id`。
 5. 如果 `Upgrade` 头非空或 `Connection` 含 `upgrade`：返回 501，不尝试转发。
