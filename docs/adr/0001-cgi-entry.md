@@ -1,8 +1,10 @@
 # ADR 0001：所有应用入口走 CGI，不使用独立端口或统一网关
 
-- 状态：accepted
+- 状态：superseded（代理应用部分被 ADR 0004 取代；托管台仍按本 ADR 走 CGI）
 - 日期：2026-11-16
-- 相关：T1 #7、T3 #9、#11、docs/research/watchcow-cgi-entry.md、docs/research/fnos-fpk-and-embedding.md
+- 相关：T1 #7、T3 #9、#11、ADR 0004、docs/research/watchcow-cgi-entry.md、docs/research/fnos-fpk-and-embedding.md
+
+> 2026-11-16 更正：代理应用不再走 CGI，恢复独立 TCP 端口（ADR 0004）。本文保留托管台 CGI 的决策与背景。
 
 ## 背景
 

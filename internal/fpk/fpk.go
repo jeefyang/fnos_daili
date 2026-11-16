@@ -106,6 +106,9 @@ func BuildProxy(w io.Writer, opts BuildOptions) (Result, error) {
 	if err != nil {
 		return zero, err
 	}
+	if !spec.ValidPort(s.Port) {
+		return zero, fmt.Errorf("proxy port %d is outside %d-%d", s.Port, spec.PortMin, spec.PortMax)
+	}
 	if len(opts.Assets.ProxyBinary) == 0 {
 		return zero, fmt.Errorf("proxy binary is empty")
 	}
@@ -131,7 +134,7 @@ func BuildProxy(w io.Writer, opts BuildOptions) (Result, error) {
 	manifest := buildManifest(s, platform, hex.EncodeToString(checksum[:]))
 
 	var pkg bytes.Buffer
-	if err := writeOuter(&pkg, opts.Assets.Icon64, opts.Assets.Icon256, privilegeJSON, appTGZ, manifest, mainScript(s.AppName), installCallbackScript()); err != nil {
+	if err := writeOuter(&pkg, opts.Assets.Icon64, opts.Assets.Icon256, privilegeJSON, appTGZ, manifest, mainScript(s.AppName, s.Port), noopScript()); err != nil {
 		return zero, err
 	}
 	if _, err := w.Write(pkg.Bytes()); err != nil {
@@ -274,8 +277,8 @@ func buildUIConfig(s spec.ProxySpec) ([]byte, error) {
 			Icon:      "images/icon_{0}.png",
 			Type:      s.UIType,
 			Protocol:  "http",
-			Port:      "",
-			URL:       "/cgi/ThirdParty/" + s.AppName + "/index.cgi/",
+			Port:      fmt.Sprint(s.Port),
+			URL:       "/",
 			AllUsers:  s.AllUsers,
 			NoDisplay: s.NoDisplay,
 			FileTypes: s.FileTypes,
@@ -358,39 +361,45 @@ func buildManifest(s spec.ProxySpec, platform, checksum string) string {
 		"os_min_version=0.9.0",
 		"desktop_uidir=ui",
 		"desktop_applaunchname=" + s.AppName + ".main",
+		"service_port=" + fmt.Sprint(s.Port),
 		"checkport=false",
 		"checksum=" + checksum,
 	}
 	return strings.Join(lines, "\n") + "\n"
 }
 
-func mainScript(appName string) string {
+func mainScript(appName string, port int) string {
 	return fmt.Sprintf(`#!/bin/bash
 set -u
 APP="%s"
+PORT="%d"
 DESK="${TRIM_APPDEST:-/tmp/$APP}"
 VAR="${TRIM_PKGVAR:-/tmp/$APP-var}"
 PID="$VAR/$APP.pid"
-SOCK="$VAR/proxy.sock"
 LOG="$VAR/$APP.log"
 
 start() {
   mkdir -p "$VAR" || exit 1
   chmod 700 "$VAR"
   if [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null; then
-    [ -S "$SOCK" ] && exit 0
+    exit 0
   fi
-  rm -f "$SOCK" "$PID"
+  rm -f "$PID"
   if [ -f "$DESK/config.json" ]; then
     cp -f "$DESK/config.json" "$VAR/config.json"
     chmod 600 "$VAR/config.json"
   fi
-  nohup "$DESK/bin/proxy" --mode serve --socket "$SOCK" --config "$VAR/config.json" \
+  nohup "$DESK/bin/proxy" --mode serve --listen "0.0.0.0:$PORT" --config "$VAR/config.json" \
     >>"$LOG" 2>&1 &
   echo $! >"$PID"
   chmod 600 "$PID"
   for _ in $(seq 1 50); do
-    [ -S "$SOCK" ] && exit 0
+    if ! kill -0 "$(cat "$PID")" 2>/dev/null; then
+      break
+    fi
+    if (echo >"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
+      exit 0
+    fi
     sleep 0.1
   done
   exit 1
@@ -406,12 +415,11 @@ stop() {
     kill -9 "$(cat "$PID")" 2>/dev/null || true
     rm -f "$PID"
   fi
-  rm -f "$SOCK"
   exit 0
 }
 
 status() {
-  if [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null && [ -S "$SOCK" ]; then
+  if [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null; then
     exit 0
   fi
   exit 3
@@ -423,22 +431,7 @@ case "${1:-}" in
   status) status ;;
   *) exit 1 ;;
 esac
-`, appName)
-}
-
-func installCallbackScript() string {
-	return `#!/bin/bash
-set -u
-DESK="${TRIM_APPDEST:?}"
-VAR="${TRIM_PKGVAR:?}"
-mkdir -p "$DESK/ui" "$VAR"
-cat >"$DESK/ui/index.cgi" <<'CGI'
-#!/bin/bash
-exec "${TRIM_APPDEST}/bin/proxy" --mode cgi --socket "${TRIM_PKGVAR}/proxy.sock"
-CGI
-chmod 755 "$DESK/ui/index.cgi"
-exit 0
-`
+`, appName, port)
 }
 
 func noopScript() string {

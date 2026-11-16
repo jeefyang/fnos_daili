@@ -11,7 +11,9 @@
     volumesLoaded: false,
     polling: null,
     lastPackage: null,
-    lastOpAppName: ''
+    lastOpAppName: '',
+    lastOpPort: 0,
+    editPort: 0
   };
 
   function $(id) { return document.getElementById(id); }
@@ -80,8 +82,14 @@
     return { text: v[0], cls: v[1] };
   }
 
-  function entryURL(appname) {
-    return location.origin + '/cgi/ThirdParty/' + encodeURIComponent(appname) + '/index.cgi/';
+  // Proxy apps listen on their own TCP port, so the entry is a different
+  // origin. The desktop page is HTTPS, but top-level navigation to HTTP is
+  // allowed (it is not mixed content).
+  function entryURL(appname, port) {
+    if (!port) return '';
+    var host = location.hostname || 'localhost';
+    if (host.indexOf(':') >= 0 && host.charAt(0) !== '[') host = '[' + host + ']';
+    return 'http://' + host + ':' + port + '/';
   }
 
   function fmtTime(s) {
@@ -140,7 +148,7 @@
         } else {
           opText = '—';
         }
-        var url = entryURL(sp.appname);
+        var url = entryURL(sp.appname, sp.port);
         var actions = [];
         if (rt.state === 'running' || rt.state === 'installed_not_running') {
           actions.push('<button class="btn sm" data-act="open" data-id="' + esc(sp.id) + '" type="button">打开</button>');
@@ -155,7 +163,7 @@
           '<td class="app-cell"><div class="name">' + esc(sp.display_name) + '</div><div class="id mono">' + esc(sp.appname) + '</div></td>' +
           '<td class="target-cell"><div class="mono">' + esc(sp.target_url) + '</div><div class="faint">' + (sp.mode === 'direct' ? '直连 302' : '反向代理') + '</div></td>' +
           '<td><span class="pill ' + st.cls + '"><span class="dot"></span>' + st.text + '</span>' + (rt.needs_reapply ? '<div class="faint" style="font-size:11px;margin-top:3px">待重新应用</div>' : '') + '</td>' +
-          '<td class="nowrap"><a class="mono" style="font-size:11.5px" href="' + esc(url) + '" target="_blank" rel="noopener">' + esc('…/index.cgi/') + '</a></td>' +
+          '<td class="nowrap">' + (url ? '<a class="mono" style="font-size:11.5px" href="' + esc(url) + '" target="_blank" rel="noopener">:' + esc(sp.port) + '/</a>' : '<span class="faint">未分配</span>') + '</td>' +
           '<td class="muted" style="font-size:12px;max-width:230px">' + esc(opText) + '</td>' +
           '<td><div class="row-actions">' + actions.join('') + '</div></td>' +
           '</tr>';
@@ -197,7 +205,7 @@
     var act = btn.getAttribute('data-act');
     if (act === 'open') {
       var t = findTarget(id);
-      if (t) window.open(entryURL(t.spec.appname), '_blank', 'noopener');
+      if (t) window.open(entryURL(t.spec.appname, t.spec.port), '_blank', 'noopener');
     } else if (act === 'edit') {
       var t2 = findTarget(id);
       if (t2) startEdit(t2);
@@ -227,7 +235,7 @@
   function applyTarget(id, kind) {
     state.editId = id;
     var t = findTarget(id);
-    if (t) state.lastOpAppName = t.spec.appname;
+    if (t) { state.lastOpAppName = t.spec.appname; state.lastOpPort = t.spec.port; }
     api('/api/targets/' + id + '/apply', { method: 'POST', body: { kind: kind || '' } }).then(function (r) {
       switchTab('wizard');
       showStep(4);
@@ -271,6 +279,7 @@
     state.appnameTouched = false;
     state.mode = 'reverse';
     state.lastPackage = null;
+    state.editPort = 0;
     $('target_url').value = '';
     $('display_name').value = '';
     $('appname').value = '';
@@ -306,6 +315,7 @@
     switchTab('wizard');
     resetForm();
     state.editId = t.spec.id;
+    state.editPort = t.spec.port || 0;
     state.appnameTouched = true;
     $('target_url').value = t.spec.target_url;
     $('display_name').value = t.spec.display_name;
@@ -483,7 +493,7 @@
       ['模式', d.mode === 'direct' ? '直连 302' : '反向代理'],
       ['显示名称', d.display_name],
       ['appname', d.appname],
-      ['入口', entryURL(d.appname)],
+      ['入口', state.editPort ? entryURL(d.appname, state.editPort) : '生成时自动分配端口'],
       ['安装卷', '卷 ' + d.install_volume],
       ['Basic Auth', d.basic_auth ? ('开启 · ' + d.basic_auth.username) : '关闭'],
       ['跳过证书校验', d.skip_tls_verify ? '是' : '否'],
@@ -552,6 +562,9 @@
       : api('/api/targets', { method: 'POST', body: input });
     req.then(function (t) {
       state.editId = t.spec.id;
+      state.editPort = t.spec.port || 0;
+      state.lastOpAppName = t.spec.appname;
+      state.lastOpPort = t.spec.port || 0;
       return api('/api/targets/' + t.spec.id + '/apply', { method: 'POST', body: { kind: '' } });
     }).then(function (r) {
       $('applyBox').style.display = '';
@@ -592,7 +605,7 @@
         $('nextBtn').disabled = false;
         if (op.status === 'succeeded') {
           $('applyAlert').innerHTML = '<div class="alert ok">安装完成，应用已进入运行状态。</div>';
-          var links = '<a class="btn primary sm" target="_blank" rel="noopener" href="' + esc(entryURL(state.lastOpAppName || $('appname').value)) + '">打开入口</a>';
+          var links = '<a class="btn primary sm" target="_blank" rel="noopener" href="' + esc(entryURL(state.lastOpAppName || $('appname').value, state.lastOpPort)) + '">打开入口</a>';
           if (state.editId) {
             links += ' <a class="btn sm" href="' + apiURL('/api/targets/' + encodeURIComponent(state.editId) + '/package') + '">下载 fpk</a>';
             links += ' <button class="btn sm" type="button" id="backList">返回列表</button>';

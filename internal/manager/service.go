@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -107,6 +108,7 @@ type SpecView struct {
 	Mode          string    "json:\"mode\""
 	EntryTitle    string    "json:\"entry_title\""
 	UIType        string    "json:\"ui_type\""
+	Port          int       "json:\"port\""
 	AllUsers      bool      "json:\"all_users\""
 	NoDisplay     bool      "json:\"no_display\""
 	FileTypes     []string  "json:\"file_types\""
@@ -267,6 +269,11 @@ func (s *Service) Create(in SpecInput) (TargetView, error) {
 		return TargetView{}, &spec.Error{Field: "appname", Message: "already exists"}
 	}
 	sp.ID = newID()
+	port, err := s.allocatePortLocked()
+	if err != nil {
+		return TargetView{}, err
+	}
+	sp.Port = port
 	now := s.now()
 	t := state.Target{
 		Spec: sp,
@@ -300,6 +307,7 @@ func (s *Service) Update(id string, in SpecInput) (TargetView, error) {
 		return TargetView{}, err
 	}
 	sp.ID = t.Spec.ID
+	sp.Port = t.Spec.Port
 	old := t.Spec
 	t.Spec = sp
 	if isInstalledState(t.Runtime.State) && !sameInstallInput(old, sp) {
@@ -310,6 +318,28 @@ func (s *Service) Update(id string, in SpecInput) (TargetView, error) {
 		return TargetView{}, err
 	}
 	return viewOf(*t), nil
+}
+
+// allocatePortLocked picks the lowest free port in the proxy range. The bind
+// test catches listeners that are not in state.json (for example a manually
+// installed package).
+func (s *Service) allocatePortLocked() (int, error) {
+	used := map[int]bool{}
+	for _, t := range s.st.Targets {
+		used[t.Spec.Port] = true
+	}
+	for p := spec.PortMin; p <= spec.PortMax; p++ {
+		if used[p] {
+			continue
+		}
+		ln, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", p))
+		if err != nil {
+			continue
+		}
+		_ = ln.Close()
+		return p, nil
+	}
+	return 0, &spec.Error{Field: "port", Message: fmt.Sprintf("no free port in %d-%d", spec.PortMin, spec.PortMax)}
 }
 
 func (s *Service) specFromInput(in SpecInput, existingAuth *spec.BasicAuth) (spec.ProxySpec, error) {
@@ -408,7 +438,7 @@ func viewOf(t state.Target) TargetView {
 		ID: t.Spec.ID, AppName: t.Spec.AppName, DisplayName: t.Spec.DisplayName,
 		Description: t.Spec.Description, Version: t.Spec.Version, TargetURL: t.Spec.TargetURL,
 		Mode: t.Spec.Mode, EntryTitle: t.Spec.EntryTitle, UIType: t.Spec.UIType,
-		AllUsers: t.Spec.AllUsers, NoDisplay: t.Spec.NoDisplay, FileTypes: t.Spec.FileTypes,
+		Port: t.Spec.Port, AllUsers: t.Spec.AllUsers, NoDisplay: t.Spec.NoDisplay, FileTypes: t.Spec.FileTypes,
 		InstallVolume: t.Spec.InstallVolume, SkipTLSVerify: t.Spec.SkipTLSVerify,
 		AllowLoopback: t.Spec.AllowLoopback,
 	}

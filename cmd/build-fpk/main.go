@@ -32,6 +32,7 @@ func main() {
 		displayName   = flag.String("display-name", "", "display name shown in the fnOS desktop")
 		desc          = flag.String("desc", "", "optional description (defaults to the target URL)")
 		targetURL     = flag.String("target", "", "target origin, e.g. http://192.168.1.10:8123")
+		port          = flag.Int("port", 0, "entry TCP port (20000-29999)")
 		mode          = flag.String("mode", "reverse", "reverse or direct")
 		version       = flag.String("version", "1.0.0", "package version")
 		entryTitle    = flag.String("entry-title", "", "desktop entry title (defaults to display-name)")
@@ -49,9 +50,13 @@ func main() {
 	)
 	flag.Parse()
 
-	if *appName == "" || *displayName == "" || *targetURL == "" {
+	if *appName == "" || *displayName == "" || *targetURL == "" || *port == 0 {
 		flag.Usage()
-		fmt.Fprintln(os.Stderr, "build-fpk: --appname, --display-name and --target are required")
+		fmt.Fprintln(os.Stderr, "build-fpk: --appname, --display-name, --target and --port are required")
+		os.Exit(2)
+	}
+	if !spec.ValidPort(*port) {
+		fmt.Fprintln(os.Stderr, "build-fpk: --port must be between 20000 and 29999")
 		os.Exit(2)
 	}
 	if (*basicUser == "") != (*basicHash == "") {
@@ -80,6 +85,7 @@ func main() {
 		Description:   *desc,
 		Version:       *version,
 		TargetURL:     *targetURL,
+		Port:          *port,
 		Mode:          *mode,
 		EntryTitle:    *entryTitle,
 		UIType:        *uiType,

@@ -9,7 +9,14 @@ import (
 	"github.com/jeefyang/fnos_daili/internal/target"
 )
 
-const ManagerAppName = "daili.manager"
+const (
+	ManagerAppName = "daili.manager"
+	PortMin        = 20000
+	PortMax        = 29999
+)
+
+// ValidPort reports whether p is in the manager-allocated proxy port range.
+func ValidPort(p int) bool { return p >= PortMin && p <= PortMax }
 
 type Mode string
 
@@ -34,6 +41,7 @@ type ProxySpec struct {
 	Mode          string     `json:"mode"`
 	EntryTitle    string     `json:"entry_title"`
 	UIType        string     `json:"ui_type"`
+	Port          int        `json:"port"`
 	AllUsers      bool       `json:"all_users"`
 	NoDisplay     bool       `json:"no_display"`
 	FileTypes     []string   `json:"file_types"`
@@ -127,6 +135,10 @@ func NormalizeProxySpec(in ProxySpec) (ProxySpec, error) {
 
 	if out.InstallVolume != "" && !volumeRE.MatchString(out.InstallVolume) {
 		return out, invalid("install_volume", "must contain only letters, digits, '.', '_' or '-'")
+	}
+
+	if out.Port != 0 && !ValidPort(out.Port) {
+		return out, invalid("port", "must be between %d and %d", PortMin, PortMax)
 	}
 
 	if out.BasicAuth != nil {

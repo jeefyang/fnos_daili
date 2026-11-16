@@ -69,6 +69,8 @@ func TestNormalizeProxySpecRejectsInvalid(t *testing.T) {
 		{"entry title too long", func(s *ProxySpec) { s.EntryTitle = strings.Repeat("家", 33) }, "entry_title"},
 		{"bad volume", func(s *ProxySpec) { s.InstallVolume = "a/b" }, "install_volume"},
 		{"bad target", func(s *ProxySpec) { s.TargetURL = "http://host/path" }, "target_url"},
+		{"port too low", func(s *ProxySpec) { s.Port = 19999 }, "port"},
+		{"port too high", func(s *ProxySpec) { s.Port = 30000 }, "port"},
 		{"direct with auth", func(s *ProxySpec) {
 			s.Mode = "direct"
 			s.BasicAuth = &BasicAuth{Username: "home", PasswordHash: "$2a$12$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0"}

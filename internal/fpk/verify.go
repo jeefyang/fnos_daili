@@ -13,6 +13,7 @@ import (
 	"image/png"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/jeefyang/fnos_daili/internal/spec"
@@ -35,6 +36,7 @@ type VerifyResult struct {
 	AppTGZChecksum       string
 	ProxySize            int64
 	ManagerSize          int64
+	Port                 int
 }
 
 var outerMembers = map[string]bool{
@@ -116,10 +118,14 @@ func Verify(data []byte) (VerifyResult, error) {
 	if manifest["checkport"] != "false" {
 		return zero, fmt.Errorf("manifest checkport must be false, got %q", manifest["checkport"])
 	}
-	for _, forbidden := range []string{"service_port", "install_type", "arch"} {
+	for _, forbidden := range []string{"install_type", "arch"} {
 		if _, ok := manifest[forbidden]; ok {
 			return zero, fmt.Errorf("manifest must not contain %q", forbidden)
 		}
+	}
+	port, err := strconv.Atoi(manifest["service_port"])
+	if err != nil || !spec.ValidPort(port) {
+		return zero, fmt.Errorf("manifest service_port %q is outside %d-%d", manifest["service_port"], spec.PortMin, spec.PortMax)
 	}
 	sum := md5.Sum(members["app.tgz"].data)
 	wantSum := hex.EncodeToString(sum[:])
@@ -215,11 +221,11 @@ func Verify(data []byte) (VerifyResult, error) {
 	if s, _ := entry["protocol"].(string); s != "http" {
 		return zero, fmt.Errorf("app ui/config protocol = %q", s)
 	}
-	if s, _ := entry["port"].(string); s != "" {
-		return zero, fmt.Errorf("app ui/config port must be empty, got %q", s)
+	if s, _ := entry["port"].(string); s != fmt.Sprint(port) {
+		return zero, fmt.Errorf("app ui/config port = %q, want %d", s, port)
 	}
-	if wantURL := "/cgi/ThirdParty/" + appName + "/index.cgi/"; entry["url"] != wantURL {
-		return zero, fmt.Errorf("app ui/config url = %v, want %q", entry["url"], wantURL)
+	if entry["url"] != "/" {
+		return zero, fmt.Errorf("app ui/config url = %v, want \"/\"", entry["url"])
 	}
 	if s, _ := entry["icon"].(string); s != "images/icon_{0}.png" {
 		return zero, fmt.Errorf("app ui/config icon = %q", s)
@@ -235,6 +241,7 @@ func Verify(data []byte) (VerifyResult, error) {
 		Size:                 int64(len(data)),
 		AppTGZChecksum:       wantSum,
 		ProxySize:            int64(len(proxy)),
+		Port:                 port,
 	}, nil
 }
 

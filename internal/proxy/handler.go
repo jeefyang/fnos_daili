@@ -39,6 +39,9 @@ type Options struct {
 	Logger   *log.Logger
 	Resolver guard.Resolver
 	CGIDial  func(ctx context.Context, network, address string) (net.Conn, error)
+	// Root serves the entry at the origin root (independent TCP port). The
+	// default keeps the CGI prefix used by index.cgi entries.
+	Root bool
 }
 
 type Handler struct {
@@ -65,10 +68,14 @@ func New(cfg *proxyconfig.Config, opts Options) (*Handler, error) {
 	if logger == nil {
 		logger = log.New(io.Discard, "", 0)
 	}
+	prefix := EntryPrefix(cfg.AppName)
+	if opts.Root {
+		prefix = ""
+	}
 	h := &Handler{
 		cfg:    cfg,
 		target: target,
-		prefix: EntryPrefix(cfg.AppName),
+		prefix: prefix,
 		logger: logger,
 	}
 	if cfg.Direct() {

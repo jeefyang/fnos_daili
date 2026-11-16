@@ -132,6 +132,32 @@ func TestReverseRewriteAndResponse(t *testing.T) {
 	}
 }
 
+func TestRootMountRewritesWithoutPrefix(t *testing.T) {
+	var targetURL string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", targetURL+"/next?x=1")
+		w.Header().Add("Set-Cookie", "sid=abc; Domain=example.com; Path=/app")
+		w.WriteHeader(200)
+	}))
+	defer target.Close()
+	targetURL = target.URL
+
+	c := reverseConfig(t, target.URL, true)
+	h, err := New(c, Options{Root: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := httptest.NewServer(h)
+	defer s.Close()
+	resp := get(t, s, "/foo", nil)
+	if resp.Header.Get("Location") != "/next?x=1" {
+		t.Fatalf("Location = %q", resp.Header.Get("Location"))
+	}
+	if cookie := resp.Header.Get("Set-Cookie"); !strings.Contains(cookie, "Path=/app") || strings.Contains(cookie, "Domain=") {
+		t.Fatalf("Set-Cookie = %q", cookie)
+	}
+}
+
 func TestReverseStartupRejectsLoopback(t *testing.T) {
 	c := reverseConfig(t, "http://127.0.0.1:9", false)
 	if _, err := New(c, Options{}); err == nil {

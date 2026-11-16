@@ -22,6 +22,7 @@ import (
 
 func main() {
 	mode := flag.String("mode", "serve", "serve or cgi")
+	listen := flag.String("listen", "", "TCP listen address, e.g. 0.0.0.0:20001")
 	socket := flag.String("socket", "", "unix socket path")
 	configPath := flag.String("config", "", "config.json path")
 	flag.Parse()
@@ -34,7 +35,7 @@ func main() {
 
 	switch *mode {
 	case "serve":
-		if err := runServe(*socket, *configPath, logger); err != nil {
+		if err := runServe(*listen, *socket, *configPath, logger); err != nil {
 			logger.Fatalf("serve: %v", err)
 		}
 	case "cgi":
@@ -46,7 +47,7 @@ func main() {
 	}
 }
 
-func runServe(socket, configPath string, logger *log.Logger) error {
+func runServe(listen, socket, configPath string, logger *log.Logger) error {
 	path, err := resolveConfig(configPath)
 	if err != nil {
 		return err
@@ -58,27 +59,42 @@ func runServe(socket, configPath string, logger *log.Logger) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	if socket == "" {
-		socket = filepath.Join(os.Getenv("TRIM_PKGVAR"), "proxy.sock")
-	}
-	if socket == "" {
-		return errors.New("no socket path")
-	}
-	handler, err := proxy.New(cfg, proxy.Options{Logger: logger})
-	if err != nil {
-		return err
-	}
-	if err := prepareSocket(socket); err != nil {
-		return err
-	}
-	listener, err := net.Listen("unix", socket)
-	if err != nil {
-		return err
+	var listener net.Listener
+	var handler http.Handler
+	if listen != "" {
+		h, err := proxy.New(cfg, proxy.Options{Logger: logger, Root: true})
+		if err != nil {
+			return err
+		}
+		handler = h
+		listener, err = net.Listen("tcp", listen)
+		if err != nil {
+			return err
+		}
+	} else {
+		if socket == "" {
+			socket = filepath.Join(os.Getenv("TRIM_PKGVAR"), "proxy.sock")
+		}
+		if socket == "" {
+			return errors.New("no listen address or socket path")
+		}
+		h, err := proxy.New(cfg, proxy.Options{Logger: logger})
+		if err != nil {
+			return err
+		}
+		handler = h
+		if err := prepareSocket(socket); err != nil {
+			return err
+		}
+		listener, err = net.Listen("unix", socket)
+		if err != nil {
+			return err
+		}
+		if err := os.Chmod(socket, 0o600); err != nil {
+			return err
+		}
 	}
 	defer listener.Close()
-	if err := os.Chmod(socket, 0o600); err != nil {
-		return err
-	}
 	server := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
@@ -92,7 +108,7 @@ func runServe(socket, configPath string, logger *log.Logger) error {
 		defer cancel()
 		_ = server.Shutdown(shutdown)
 	}()
-	logger.Printf("started app=%s mode=%s target=%s socket=%s", cfg.AppName, cfg.Mode, cfg.Target, socket)
+	logger.Printf("started app=%s mode=%s target=%s listen=%s socket=%s", cfg.AppName, cfg.Mode, cfg.Target, listen, socket)
 	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

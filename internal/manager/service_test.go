@@ -15,6 +15,7 @@ import (
 	"github.com/jeefyang/fnos_daili/internal/assets"
 	"github.com/jeefyang/fnos_daili/internal/cli"
 	"github.com/jeefyang/fnos_daili/internal/fpk"
+	"github.com/jeefyang/fnos_daili/internal/spec"
 	"github.com/jeefyang/fnos_daili/internal/state"
 )
 
@@ -129,6 +130,9 @@ func TestCreateAndUpdate(t *testing.T) {
 	if got.Runtime.State != state.StateDraft || got.Spec.ID == "" {
 		t.Fatalf("created = %+v", got)
 	}
+	if !spec.ValidPort(got.Spec.Port) {
+		t.Fatalf("allocated port = %d, want 20000-29999", got.Spec.Port)
+	}
 	in := input()
 	in.DisplayName = "改过的名字"
 	upd, err := s.Update(got.Spec.ID, in)
@@ -137,6 +141,9 @@ func TestCreateAndUpdate(t *testing.T) {
 	}
 	if upd.Spec.AppName != "daili.demo" || upd.Spec.DisplayName != "改过的名字" {
 		t.Fatalf("updated = %+v", upd)
+	}
+	if upd.Spec.Port != got.Spec.Port {
+		t.Fatalf("port changed on update: %d -> %d", got.Spec.Port, upd.Spec.Port)
 	}
 	in.AppName = "daili.other"
 	if _, err := s.Update(got.Spec.ID, in); err == nil {

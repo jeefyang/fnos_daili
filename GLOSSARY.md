@@ -8,7 +8,7 @@
 
 ## 代理应用 (Proxy App)
 
-托管台为一个目标生成并安装的独立 fnOS 应用。一个代理应用对应一个目标、一个 `appname`、一个入口，包内嵌同一份通用反代二进制与 `config.json`；入口走 CGI，由包内 `ui/index.cgi` 交给 Unix socket 上的常驻进程，不占入口 TCP 端口。默认仅管理员可见，可选 HTTP Basic Auth；可见性不是鉴权。
+托管台为一个目标生成并安装的独立 fnOS 应用。一个代理应用对应一个目标、一个 `appname`、一个入口，包内嵌同一份通用反代二进制与 `config.json`；入口走独立 TCP 端口，常驻进程直接监听该端口，不经过 CGI。默认仅管理员可见，可选 HTTP Basic Auth；可见性不是鉴权。
 
 ## 目标 (Target)
 
@@ -16,23 +16,23 @@
 
 ## 入口 (Entry)
 
-fnOS 应用在桌面或应用中心暴露出来的打开方式，带标题、图标、`ui_type`、`all_users`、`url` 等字段。沿用 watchcow 的入口模型；fnOS 允许一个应用有多个入口，本项目每个代理应用只生成一个。入口的 `url` 是 CGI 路径，不是目标地址。
+fnOS 应用在桌面或应用中心暴露出来的打开方式，带标题、图标、`ui_type`、`all_users`、`url` 等字段。沿用 watchcow 的入口模型；fnOS 允许一个应用有多个入口，本项目每个代理应用只生成一个。代理应用的入口 `url` 是 `/`、`port` 是分配到的独立端口；托管台的入口 `url` 是 CGI 路径。两者都不指向目标地址。
 
 ## 可见性 (all_users)
 
-入口字段，决定哪些飞牛用户能在桌面看到图标；`false` 仅管理员可见，`true` 所有登录用户可见。它不控制 CGI 入口的可达性，也不是登录或鉴权。
+入口字段，决定哪些飞牛用户能在桌面看到图标；`false` 仅管理员可见，`true` 所有登录用户可见。它不控制入口端口或 CGI 路径的可达性，也不是登录或鉴权。
 
 ## CGI 入口 (CGI entry)
 
-fnOS 入口的一种运行方式：`app/ui/config` 的 `url` 写成 `/cgi/ThirdParty/<appname>/index.cgi/`，`port` 留空；安装时 `cmd/install_callback` 在 `TRIM_APPDEST/ui/index.cgi` 写一个可执行 shim，把请求 exec 给包内二进制的 `--mode cgi --socket <TRIM_PKGVAR>/...`。二进制从路径里截掉 `index.cgi` 及之前的部分，把剩余路径经 Unix socket 交给常驻进程。它同源、不占入口 TCP 端口，但自身不带 SSO。
+fnOS 入口的一种运行方式：`app/ui/config` 的 `url` 写成 `/cgi/ThirdParty/<appname>/index.cgi/`，`port` 留空；安装时 `cmd/install_callback` 在 `TRIM_APPDEST/ui/index.cgi` 写一个可执行 shim，把请求 exec 给包内二进制的 `--mode cgi --socket <TRIM_PKGVAR>/...`。二进制从路径里截掉 `index.cgi` 及之前的部分，把剩余路径经 Unix socket 交给常驻进程。它同源、不占入口 TCP 端口，但自身不带 SSO；本项目只有托管台用它。
 
 ## 网关入口 (Gateway entry)
 
-飞牛入口的一种运行方式：桌面请求经 `/app/<appname>/` 统一网关转发到应用自己的 Unix socket，网关先校验飞牛登录态并注入用户/管理员头。本项目不采用它（改用 CGI 入口），保留此条仅作对照。
+飞牛入口的一种运行方式：桌面请求经 `/app/<appname>/` 统一网关转发到应用自己的 Unix socket，网关先校验飞牛登录态并注入用户/管理员头。本项目不采用它（托管台用 CGI 入口，代理应用用独立端口），保留此条仅作对照。
 
 ## 反代模式 (Reverse mode)
 
-入口经 CGI 交给代理应用的常驻进程，由该进程在服务端把整站请求转发给目标；浏览器只与飞牛应用中心这个 origin 交互。默认模式，受目标拦截约束。
+浏览器打开代理应用自己的端口，常驻进程在服务端把整站请求转发给目标；浏览器只与 `http://<fnos-host>:<port>` 这个 origin 交互。默认模式，受目标拦截约束。
 
 ## 直连模式 (Direct mode)
 
@@ -48,7 +48,7 @@ fnOS 入口的一种运行方式：`app/ui/config` 的 `url` 写成 `/cgi/ThirdP
 
 ## 端口 (Port)
 
-本项目代理入口不使用 TCP 端口；`20000–29999` 只作为目标拦截要拒绝的预留端口段。历史 T1 曾定过“每应用一个自动分配端口”，已随 CGI 入口作废。
+代理应用的入口端口：生成时从 `20000–29999` 自动分配，写进 manifest 的 `service_port` 与入口 `port`，运行时以 `TRIM_SERVICE_PORT` 为准；一个应用一个端口，删除应用时释放。该段仍同时是目标拦截要拒绝的预留段，防止代理链回自己。
 
 ## 应用标识 (appname)
 
@@ -84,7 +84,7 @@ fnOS 入口的一种运行方式：`app/ui/config` 的 `url` 写成 `/cgi/ThirdP
 
 ## 入口前缀 (Entry prefix)
 
-CGI 入口的固定路径前缀 `/cgi/ThirdParty/<appname>/index.cgi`。反代层用它拼 Cookie 的 `Path` 和同源 `Location`，保证目标站点的跳转与会话仍停留在代理入口下。
+CGI 入口的固定路径前缀 `/cgi/ThirdParty/<appname>/index.cgi`。托管台的 CGI 层用它截路径；代理应用走独立端口，入口前缀为空，不参与 Cookie/Location 改写。
 
 ## 操作 (Operation)
 

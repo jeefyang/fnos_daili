@@ -40,6 +40,7 @@ func testOptions(t *testing.T) BuildOptions {
 		DisplayName:   "家里的 Home Assistant",
 		Description:   "通过代理访问 192.168.1.10:8123",
 		TargetURL:     "192.168.1.10:8123",
+		Port:          20001,
 		Mode:          "reverse",
 		AllUsers:      true,
 		InstallVolume: "1",
@@ -125,6 +126,7 @@ func TestBuildProxyLayout(t *testing.T) {
 		"platform=x86",
 		"desktop_uidir=ui",
 		"desktop_applaunchname=proxy.home.9f3a.main",
+		"service_port=20001",
 		"checkport=false",
 		"checksum=",
 	} {
@@ -132,7 +134,7 @@ func TestBuildProxyLayout(t *testing.T) {
 			t.Errorf("manifest missing %q:\n%s", want, manifest)
 		}
 	}
-	for _, forbidden := range []string{"service_port=", "install_type=", "arch="} {
+	for _, forbidden := range []string{"install_type=", "arch="} {
 		if strings.Contains(manifest, forbidden) {
 			t.Errorf("manifest has forbidden %q:\n%s", forbidden, manifest)
 		}
@@ -166,8 +168,11 @@ func TestBuildProxyLayout(t *testing.T) {
 	if !ok {
 		t.Fatalf("ui/config key mismatch: %s", app["ui/config"])
 	}
-	if entry["url"] != "/cgi/ThirdParty/proxy.home.9f3a/index.cgi/" {
+	if entry["url"] != "/" {
 		t.Errorf("entry url = %v", entry["url"])
+	}
+	if entry["port"] != "20001" {
+		t.Errorf("entry port = %v", entry["port"])
 	}
 	if entry["allUsers"] != true || entry["noDisplay"] != false {
 		t.Errorf("entry visibility = %v/%v", entry["allUsers"], entry["noDisplay"])
@@ -190,11 +195,11 @@ func TestBuildProxyLayout(t *testing.T) {
 		t.Errorf("config missing tls/guard: %+v", cfg)
 	}
 
-	if !bytes.Contains(files["cmd/install_callback"], []byte("${TRIM_PKGVAR}/proxy.sock")) {
-		t.Errorf("install_callback socket = %s", files["cmd/install_callback"])
+	if bytes.Contains(files["cmd/install_callback"], []byte("index.cgi")) {
+		t.Errorf("install_callback should not create a CGI entry: %s", files["cmd/install_callback"])
 	}
-	if !bytes.Contains(files["cmd/main"], []byte("SOCK=\"$VAR/proxy.sock\"")) || !bytes.Contains(files["cmd/main"], []byte("--socket \"$SOCK\"")) {
-		t.Errorf("main socket = %s", files["cmd/main"])
+	if !bytes.Contains(files["cmd/main"], []byte("--listen \"0.0.0.0:$PORT\"")) || !bytes.Contains(files["cmd/main"], []byte("PORT=\"20001\"")) {
+		t.Errorf("main listen = %s", files["cmd/main"])
 	}
 }
 
@@ -248,6 +253,7 @@ func TestBuildProxyRejectsBadInput(t *testing.T) {
 		{"bad icon 64", func(o *BuildOptions) { o.Assets.Icon64 = []byte("not png") }},
 		{"wrong icon size", func(o *BuildOptions) { o.Assets.Icon256 = pngBytes(t, 128) }},
 		{"invalid spec", func(o *BuildOptions) { o.Spec.AppName = "-bad" }},
+		{"missing port", func(o *BuildOptions) { o.Spec.Port = 0 }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

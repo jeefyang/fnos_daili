@@ -9,7 +9,7 @@
 每个代理应用是一个独立 fpk：
 
 - 包内自带一个静态 Go 反向代理（`internal/proxy`）和生成时烤入的 `config.json`；
-- 入口走飞牛的 CGI：`/cgi/ThirdParty/<appname>/index.cgi/`，代理只监听 `$TRIM_PKGVAR/proxy.sock`，不占 TCP 端口；
+- 入口是独立 TCP 端口（20000–29999，托管台生成时分配）：manifest `service_port` + 桌面入口 `port`，代理监听 `0.0.0.0:<port>`，整站位于该端口根路径 `/`；
 - 反代模式下整站转发；直连模式下入口返回 302，浏览器随后直接访问目标；
 - 默认拒绝回环/链路本地/组播目标，按需可开 `allow_loopback`；
 - 可选 HTTP Basic Auth（仅反代），口令以 bcrypt cost 12 哈希写入包内。
@@ -29,6 +29,7 @@ go run ./cmd/build-fpk \
   --appname daili.demo \
   --display-name "示例代理" \
   --target http://192.168.1.10:8123 \
+  --port 20001 \
   --proxy-bin dist/proxy-linux-amd64 \
   --out dist/daili.demo-1.0.0.fpk
 ```
@@ -42,6 +43,7 @@ go run ./cmd/build-fpk \
 | `--appname` | 应用标识，3–32 字节，`^[A-Za-z0-9][A-Za-z0-9._-]*$`，安装后不可改 |
 | `--display-name` | 飞牛桌面显示名，1–32 字符 |
 | `--target` | 目标 origin，如 `http://192.168.1.10:8123`；只接受 scheme://host[:port] |
+| `--port` | 入口 TCP 端口，20000–29999；托管台会自动分配，手动构建时必填 |
 | `--mode` | `reverse`（默认）或 `direct` |
 | `--platform` | `x86`（linux/amd64）或 `arm`（linux/arm64） |
 | `--all-users` | 入口对所有用户可见（默认仅管理员） |

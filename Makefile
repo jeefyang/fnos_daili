@@ -3,6 +3,7 @@ DIST ?= dist
 PLATFORM ?= x86
 SAMPLE_APPNAME ?= daili.demo
 SAMPLE_TARGET ?= http://192.168.1.10:8123
+SAMPLE_PORT ?= 20001
 SAMPLE_VERSION ?= 1.0.0
 MANAGER_VERSION ?= 1.0.0
 
@@ -31,7 +32,7 @@ $(PROXY_BIN):
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(PROXY_ARCH) $(GO) build -trimpath -ldflags "-s -w -buildid=" -o $@ ./cmd/proxy
 
 sample: $(PROXY_BIN)
-	$(GO) run ./cmd/build-fpk --appname $(SAMPLE_APPNAME) --display-name "示例代理" --target $(SAMPLE_TARGET) --version $(SAMPLE_VERSION) --platform $(PLATFORM) --proxy-bin $(PROXY_BIN) --out $(SAMPLE_OUT)
+	$(GO) run ./cmd/build-fpk --appname $(SAMPLE_APPNAME) --display-name "示例代理" --target $(SAMPLE_TARGET) --port $(SAMPLE_PORT) --version $(SAMPLE_VERSION) --platform $(PLATFORM) --proxy-bin $(PROXY_BIN) --out $(SAMPLE_OUT)
 
 manager: $(MANAGER_BIN) $(PROXY_BIN)
 	$(GO) run ./cmd/build-manager --version $(MANAGER_VERSION) --platform $(PLATFORM) --manager-bin $(MANAGER_BIN) --proxy-bin $(PROXY_BIN) --out $(MANAGER_OUT)
