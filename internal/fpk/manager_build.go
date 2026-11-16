@@ -82,6 +82,7 @@ func buildManagerManifest(platform, version, checksum string) string {
 		"os_min_version=0.9.0",
 		"desktop_uidir=ui",
 		"desktop_applaunchname=" + spec.ManagerAppName + ".main",
+		"ctl_stop=true",
 		"checkport=false",
 		"checksum=" + checksum,
 	}
@@ -156,6 +157,11 @@ cat >"$DESK/ui/index.cgi" <<'CGI'
 exec "${TRIM_APPDEST}/bin/manager" --mode cgi --socket "${TRIM_PKGVAR}/manager.sock"
 CGI
 chmod 755 "$DESK/ui/index.cgi"
+# The manager has no service_port, so appcenter may not start it automatically.
+# Start it here as well; cmd/main is idempotent (pid + socket check).
+if [ -x "$DESK/cmd/main" ]; then
+  "$DESK/cmd/main" start >/dev/null 2>&1 || true
+fi
 exit 0
 `
 }

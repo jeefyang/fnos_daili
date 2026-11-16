@@ -330,10 +330,13 @@ distributor=fnos_daili
 os_min_version=0.9.0
 desktop_uidir=ui
 desktop_applaunchname=daili.manager.main
+ctl_stop=true
 checkport=false
 checksum=<md5(app.tgz)>
 ```
 
+- `ctl_stop=true`：托管台是没有 `service_port` 的守护型应用，应用中心据此提供启停并调用 `cmd/main`。
+- `cmd/install_callback` 写完 `ui/index.cgi` 后再执行一次 `cmd/main start`；与 appcenter 自己的启动重复时由 `cmd/main` 的 pid/socket 检查兜住。
 - 不写 `service_port`、`install_type`、`arch`。
 - `platform` 由构建目标决定：amd64→`x86`，arm64→`arm`。v1 只发 x86 包；ARM 构建同流程另编。
 

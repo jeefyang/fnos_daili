@@ -47,6 +47,9 @@ func VerifyManager(data []byte) (VerifyResult, error) {
 	if manifest["checkport"] != "false" {
 		return zero, fmt.Errorf("manifest checkport = %q", manifest["checkport"])
 	}
+	if manifest["ctl_stop"] != "true" {
+		return zero, fmt.Errorf("manifest ctl_stop = %q, want true", manifest["ctl_stop"])
+	}
 	for _, forbidden := range []string{"service_port", "install_type", "arch"} {
 		if _, ok := manifest[forbidden]; ok {
 			return zero, fmt.Errorf("manifest must not contain %q", forbidden)
