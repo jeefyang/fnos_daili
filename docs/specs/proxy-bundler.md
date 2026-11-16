@@ -60,7 +60,7 @@
 - 入口：`daili.manager.main`，`url=/cgi/ThirdParty/daili.manager/index.cgi/`，`type=iframe`，`all_users=false`，`no_display=false`。
 - 进程：`${TRIM_APPDEST}/bin/manager`。
 - 模式：
-  - `--mode serve`（默认）：常驻，监听 `${TRIM_PKGVAR}/manager.sock`，权限 0600。
+  - `--mode serve`（默认）：常驻，监听 `${TRIM_PKGVAR}/manager.sock`，权限 0660（与 watchcow 一致，供 Web 服务器用户连接；目录 0755，日志与状态文件仍 0600）。
   - `--mode cgi`：由 `${TRIM_APPDEST}/ui/index.cgi` 调用，把 CGI 请求反向代理到 manager.sock。
 - 数据目录：`${TRIM_PKGVAR}`，权限 0700；state、packages、build、日志、CSRF token 都在这里。
 - 不监听任何 TCP 端口。
@@ -336,7 +336,7 @@ checksum=<md5(app.tgz)>
 ```
 
 - `ctl_stop=true`：托管台是没有 `service_port` 的守护型应用，应用中心据此提供启停并调用 `cmd/main`。
-- `cmd/install_callback` 只写 `ui/index.cgi`；shim 在每次请求时检查 `manager.sock`，不存在就 `nohup manager --mode serve` 拉起守护进程，再 exec `--mode cgi`。这样即使 appcenter 没有自动 start，第一次打开界面也能用；`manager serve` 发现 socket 已有活进程时直接退出 0，不产生第二实例。
+- `cmd/install_callback` 只写 `ui/index.cgi`；写入时把 `TRIM_APPDEST`/`TRIM_PKGVAR` 展开成绝对路径烤进脚本（与 watchcow 的 `install_callback` 一致），不依赖 CGI 环境是否导出这两个变量。shim 在每次请求时检查 `manager.sock`，不存在就 `nohup manager --mode serve` 拉起守护进程，再 exec `--mode cgi`。这样即使 appcenter 没有自动 start，第一次打开界面也能用；`manager serve` 发现 socket 已有活进程时直接退出 0，不产生第二实例。
 - 不写 `service_port`、`install_type`、`arch`。
 - `platform` 由构建目标决定：amd64→`x86`，arm64→`arm`。v1 只发 x86 包；ARM 构建同流程另编。
 
@@ -507,7 +507,7 @@ esac
 `cmd/install_callback`：
 
 - 代理包：`#!/bin/bash` + `set -u` + `exit 0`；不再写 `ui/index.cgi`。
-- 托管台包：写 `ui/index.cgi`，exec `${TRIM_APPDEST}/bin/manager --mode cgi --socket ${TRIM_PKGVAR}/manager.sock`，并 `chmod 755`。
+- 托管台包：写 `ui/index.cgi`，exec `<TRIM_APPDEST>/bin/manager --mode cgi --socket <TRIM_PKGVAR>/manager.sock`，并 `chmod 755`；两个路径在 install_callback 执行时展开并写死，脚本运行期不再读 `TRIM_*`。
 
 `install_init`、`uninstall_init`、`uninstall_callback`、`upgrade_init`、`upgrade_callback`、`config_init`、`config_callback` 一律 `exit 0`，不删除用户数据；卸载时 PKGVAR 由应用中心清理。
 

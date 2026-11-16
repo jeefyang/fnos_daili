@@ -101,7 +101,7 @@ LOG="$VAR/manager.log"
 
 start() {
   mkdir -p "$VAR" || exit 1
-  chmod 700 "$VAR"
+  chmod 755 "$VAR"
   if [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null; then
     [ -S "$SOCK" ] && exit 0
   fi
@@ -154,21 +154,21 @@ set -u
 DESK="${TRIM_APPDEST:?}"
 VAR="${TRIM_PKGVAR:?}"
 mkdir -p "$DESK/ui" "$VAR"
-cat >"$DESK/ui/index.cgi" <<'CGI'
+cat >"$DESK/ui/index.cgi" <<CGI
 #!/bin/bash
 set -u
 DESK="${TRIM_APPDEST:?}"
 VAR="${TRIM_PKGVAR:?}"
 SOCK="$VAR/manager.sock"
-if [ ! -S "$SOCK" ]; then
+if [ ! -S "${VAR}/manager.sock" ]; then
   mkdir -p "$VAR"
-  nohup "$DESK/bin/manager" --mode serve --socket "$SOCK" >>"$VAR/manager.log" 2>&1 &
-  for _ in $(seq 1 50); do
-    [ -S "$SOCK" ] && break
+  nohup "$DESK/bin/manager" --mode serve --socket "${VAR}/manager.sock" >>"$VAR/manager.log" 2>&1 &
+  for _ in \$(seq 1 50); do
+    [ -S "${VAR}/manager.sock" ] && break
     sleep 0.1
   done
 fi
-exec "$DESK/bin/manager" --mode cgi --socket "$SOCK"
+exec "$DESK/bin/manager" --mode cgi --socket "${VAR}/manager.sock"
 CGI
 chmod 755 "$DESK/ui/index.cgi"
 exit 0

@@ -77,7 +77,9 @@ func openLogger() (*log.Logger, func(), error) {
 	path := filepath.Join(dir, "manager.log")
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return nil, nil, err
+		// CGI 进程可能以非 root 运行而打不开 0600 的日志；退回 stderr，
+		// 让 nginx 错误日志接管，避免整个页面变成 500。
+		return log.New(os.Stderr, "", log.LstdFlags|log.LUTC), func() {}, nil
 	}
 	_ = os.Chmod(path, 0o600)
 	info, err := file.Stat()

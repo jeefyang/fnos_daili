@@ -86,7 +86,7 @@ func runServe(socket string, logger *log.Logger) error {
 		return err
 	}
 	defer listener.Close()
-	if err := os.Chmod(socket, 0o600); err != nil {
+	if err := os.Chmod(socket, 0o660); err != nil {
 		return err
 	}
 	pidPath := filepath.Join(varDir, "manager.pid")
