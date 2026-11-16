@@ -221,8 +221,10 @@ func (h *Handler) guardDial(dialer *net.Dialer) func(context.Context, string, st
 }
 
 func (h *Handler) modifyResponse(resp *http.Response) error {
-	if id := requestID(resp.Request); id != "" {
-		resp.Header.Set("X-Request-Id", id)
+	if resp.Request != nil {
+		if id := requestID(resp.Request); id != "" {
+			resp.Header.Set("X-Request-Id", id)
+		}
 	}
 	h.rewriteLocation(resp)
 	h.rewriteCookies(resp)

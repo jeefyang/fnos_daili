@@ -78,6 +78,7 @@ func openLogger() (*log.Logger, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	_ = os.Chmod(path, 0o600)
 	info, err := file.Stat()
 	if err != nil {
 		_ = file.Close()
