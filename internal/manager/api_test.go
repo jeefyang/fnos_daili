@@ -1,0 +1,78 @@
+package manager
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func TestAPIGetTargetsSetsCSRFCookie(t *testing.T) {
+	s, _ := newTestService(t)
+	h := s.Handler(http.FileServerFS(UI()))
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/api/targets", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body)
+	}
+	var found bool
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "daili_csrf" && c.Value == s.Token() && c.HttpOnly {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("cookies = %v", rec.Result().Cookies())
+	}
+}
+
+func TestAPIPostRequiresCSRFAndSameOrigin(t *testing.T) {
+	s, _ := newTestService(t)
+	h := s.Handler(http.FileServerFS(UI()))
+	body := `{"appname":"daili.demo","display_name":"Demo","target_url":"http://192.168.1.10:8123","mode":"reverse"}`
+	req := httptest.NewRequest(http.MethodPost, "http://example.com/api/targets", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body)
+	}
+	req = httptest.NewRequest(http.MethodPost, "http://example.com/api/targets", strings.NewReader(body))
+	req.Header.Set("X-CSRF-Token", s.Token())
+	req.Header.Set("Origin", "http://evil.example")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("cross-origin status = %d body = %s", rec.Code, rec.Body)
+	}
+	req = httptest.NewRequest(http.MethodPost, "http://example.com/api/targets", strings.NewReader(body))
+	req.Header.Set("X-CSRF-Token", s.Token())
+	req.Header.Set("Origin", "http://example.com")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d body = %s", rec.Code, rec.Body)
+	}
+	var got TargetView
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Spec.AppName != "daili.demo" || got.Runtime.State != "draft" {
+		t.Fatalf("target = %+v", got)
+	}
+}
+
+func TestIndexInjectsCSRFToken(t *testing.T) {
+	s, _ := newTestService(t)
+	h := s.Handler(http.FileServerFS(UI()))
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), s.Token()) {
+		t.Fatal("index does not contain the CSRF token")
+	}
+}

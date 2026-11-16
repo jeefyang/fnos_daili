@@ -2,7 +2,7 @@
 
 把任意 HTTP(S) 目标装成飞牛（fnOS）桌面应用的小工具：填一个 `ip:port`，生成一个自包含的代理 `.fpk`，装好后从飞牛桌面直接打开。
 
-当前仓库包含**代理运行时**、**fpk 生成器**和**默认图标**；托管台的 Web 界面与安装状态机尚未实现，界面设计见 [docs/specs/proxy-bundler.md](docs/specs/proxy-bundler.md)。
+当前仓库包含**代理运行时**、**fpk 生成器**、**托管台（安装状态机 + 内嵌 Web 界面）**和默认图标；设计见 [docs/specs/proxy-bundler.md](docs/specs/proxy-bundler.md)。
 
 ## 它是怎么工作的
 
@@ -52,12 +52,32 @@ go run ./cmd/build-fpk \
 
 生成器会先构建到内存、跑 `internal/fpk.Verify` 做结构自检，再用原子替换写到 `--out`；同一个 spec 重复生成 SHA256 不变。
 
-## 安装到飞牛
+## 构建托管台
 
-把 fpk 传到 NAS，以 root 执行：
+托管台是 `daili.manager`，入口走 CGI，进程只监听 `$TRIM_PKGVAR/manager.sock`；它内嵌 Web 界面、状态文件与代理二进制，负责生成/安装/升级/卸载代理应用。
 
 ```bash
-sudo appcenter-cli install-fpk -v 1 /path/to/daili.demo-1.0.0.fpk
+make manager
+# 产物：dist/daili.manager-1.0.0.fpk
+```
+
+等价地，也可以手动交叉编译 `./cmd/manager` 与 `./cmd/proxy`，再运行：
+
+```bash
+go run ./cmd/build-manager \
+  --manager-bin dist/manager-linux-amd64 \
+  --proxy-bin dist/proxy-linux-amd64 \
+  --out dist/daili.manager-1.0.0.fpk
+```
+
+托管台的 `config/privilege` 是 `run-as root`，因为它要调用 `appcenter-cli`；代理应用仍是 `run-as package`。
+
+## 安装到飞牛
+
+先装托管台，再从它的界面建代理；也可以手工装任意代理包。把 fpk 传到 NAS，以 root 执行：
+
+```bash
+sudo appcenter-cli install-fpk -v 1 /path/to/daili.manager-1.0.0.fpk
 sudo appcenter-cli list
 ```
 
@@ -67,10 +87,15 @@ sudo appcenter-cli list
 
 ```text
 cmd/proxy/          代理可执行文件（serve / cgi 两种模式）
+cmd/manager/        托管台可执行文件（serve / cgi 两种模式）
 cmd/build-fpk/      单包生成 CLI
-internal/fpk/       fpk 构建与结构校验
+cmd/build-manager/  托管台包生成 CLI
+internal/fpk/       fpk 构建与结构校验（代理包 + 托管台包）
 internal/proxy/     反代、CGI 桥、Basic Auth、Location/Cookie 改写
 internal/proxyconfig/ 包内 config.json 的解析与校验
+internal/manager/   托管台服务、API、CSRF、安装状态机
+internal/state/     state.json 原子读写
+internal/cli/       appcenter-cli 封装与输出解析
 internal/guard/     出站目标拦截
 internal/spec/      ProxySpec 与校验
 internal/target/    target origin 规范化

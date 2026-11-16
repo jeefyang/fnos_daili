@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="{{CSRF}}">
+<title>代理打包器 · fnOS</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11a3 3 0 0 1 0 6H9"/><path d="m7 4 3 3-3 3"/><path d="M20 17H9a3 3 0 0 1 0-6h6"/><path d="m17 14-3 3 3 3"/></svg>
+      </div>
+      <div>
+        <h1>代理打包器</h1>
+        <p>把任意 HTTP(S) 目标装成 fnOS 应用 · 反代 / 直连</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="cliPill" class="pill neutral"><span class="dot"></span><span id="cliText">检查环境…</span></span>
+      <button id="newBtn" class="btn primary">新建代理</button>
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="视图">
+    <button id="tabList" class="tab active" type="button">应用</button>
+    <button id="tabWizard" class="tab" type="button">新建 / 编辑</button>
+  </nav>
+
+  <section id="listView">
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>已托管的代理应用</h2>
+          <p>每个应用一个独立安装包、一个入口；修改后需要重新生成并安装。</p>
+        </div>
+        <button id="refreshBtn" class="btn sm" type="button">刷新</button>
+      </div>
+      <div id="listBody"></div>
+    </div>
+    <div id="unmanagedWrap" style="margin-top:18px"></div>
+  </section>
+
+  <section id="wizardView" style="display:none">
+    <div class="panel wizard">
+      <aside class="steps" id="stepRail">
+        <div class="step active" data-step="1"><span class="num">1</span><div><div class="label">目标</div><div class="hint">要代理的地址</div></div></div>
+        <div class="step" data-step="2"><span class="num">2</span><div><div class="label">应用信息</div><div class="hint">名称与标识</div></div></div>
+        <div class="step" data-step="3"><span class="num">3</span><div><div class="label">入口与高级</div><div class="hint">模式与访问</div></div></div>
+        <div class="step" data-step="4"><span class="num">4</span><div><div class="label">确认与生成</div><div class="hint">打包并安装</div></div></div>
+      </aside>
+      <div class="wizard-body">
+        <div id="wzStep1">
+          <h2>先填目标地址</h2>
+          <p class="lede">只接受 origin，例如 <span class="mono">http://192.168.1.10:8123</span>。不要带路径、查询串或片段。</p>
+          <div class="field">
+            <label for="target_url">目标地址</label>
+            <div class="row">
+              <input id="target_url" class="input mono" placeholder="http://192.168.1.10:8123" autocomplete="off" spellcheck="false">
+              <button id="testBtn" class="btn" type="button">测试连通</button>
+            </div>
+            <div id="targetHelp" class="help">省略协议时按 http 处理；省略端口时按 80/443 处理。</div>
+            <div id="targetError" class="error"></div>
+            <div id="testResult"></div>
+          </div>
+        </div>
+
+        <div id="wzStep2" style="display:none">
+          <h2>给这个应用起个名字</h2>
+          <p class="lede">显示名称出现在飞牛桌面；appname 是安装目录与入口 ID 的根，首次安装后不可更改。</p>
+          <div class="grid-2">
+            <div class="field">
+              <label for="display_name">显示名称</label>
+              <input id="display_name" class="input" maxlength="32" placeholder="家里的 Home Assistant">
+              <div id="displayError" class="error"></div>
+            </div>
+            <div class="field">
+              <label for="appname">应用标识 appname</label>
+              <div class="row">
+                <input id="appname" class="input mono" maxlength="32" placeholder="proxy.home.9f3a" autocomplete="off" spellcheck="false">
+                <button id="checkNameBtn" class="btn" type="button">检查</button>
+              </div>
+              <div id="appnameMsg" class="help">3–32 位，字母或数字开头，可用 . _ -。</div>
+            </div>
+          </div>
+          <div class="field">
+            <label for="description">描述</label>
+            <textarea id="description" class="textarea" rows="2" maxlength="120" placeholder="通过代理访问 http://192.168.1.10:8123"></textarea>
+            <div id="descError" class="error"></div>
+          </div>
+          <details>
+            <summary class="muted" style="cursor:pointer;font-size:12.5px">高级：版本号</summary>
+            <div class="field" style="margin-top:12px;max-width:240px">
+              <label for="version">版本</label>
+              <input id="version" class="input mono" value="1.0.0">
+              <div class="help">默认 1.0.0，不自动递增；同版本可重装。</div>
+            </div>
+          </details>
+        </div>
+
+        <div id="wzStep3" style="display:none">
+          <h2>入口与访问方式</h2>
+          <p class="lede">反代会把目标整站搬到飞牛入口下；直连只做一次 302，后续由浏览器直接访问目标。</p>
+          <div class="field">
+            <label>代理模式</label>
+            <div class="mode-cards">
+              <button class="mode-card sel" data-mode="reverse" type="button"><div class="t">反向代理 <span class="pill info" style="font-size:10px">推荐</span></div><div class="d">浏览器只和飞牛通信，目标不出网；支持 Basic Auth、目标拦截。</div></button>
+              <button class="mode-card" data-mode="direct" type="button"><div class="t">直连跳转</div><div class="d">入口返回 302，浏览器直接访问目标；不经过 NAS 出站，不支持认证。</div></button>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="entry_title">入口标题</label>
+              <input id="entry_title" class="input" maxlength="32" placeholder="默认同显示名称">
+            </div>
+            <div class="field">
+              <label for="install_volume">安装卷</label>
+              <select id="install_volume" class="select"></select>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="ui_type">打开方式</label>
+              <select id="ui_type" class="select">
+                <option value="url">新标签页 / 外部浏览器</option>
+                <option value="iframe">桌面窗口内嵌</option>
+              </select>
+              <div class="help">反代入口是独立 origin；内嵌可能受目标站 CSP/X-Frame-Options 限制。</div>
+            </div>
+            <div class="field">
+              <label>可见性</label>
+              <label class="check"><input id="all_users" type="checkbox"><span><span class="t">所有用户可见</span><span class="d">只控制桌面图标，不是鉴权。</span></span></label>
+            </div>
+          </div>
+          <div class="field" id="reverseOnly1">
+            <label>连接与访问控制</label>
+            <div class="grid-2">
+              <label class="check"><input id="skip_tls_verify" type="checkbox"><span><span class="t">跳过 HTTPS 证书校验</span><span class="d">只对自签目标有效。</span></span></label>
+              <label class="check"><input id="allow_loopback" type="checkbox"><span><span class="t">允许本机目标</span><span class="d">仅放行 127.0.0.1 / ::1，仍拒绝管理端口。</span></span></label>
+            </div>
+          </div>
+          <div class="field" id="reverseOnly2">
+            <label class="check" style="margin-bottom:10px"><input id="auth_on" type="checkbox"><span><span class="t">启用 HTTP Basic Auth</span><span class="d">仅反代模式；口令只存 bcrypt 哈希。</span></span></label>
+            <div id="authFields" class="grid-2" style="display:none">
+              <input id="auth_user" class="input" placeholder="用户名" autocomplete="off">
+              <input id="auth_pass" class="input" type="password" placeholder="口令（8–72 字节，留空表示不改）" autocomplete="new-password">
+            </div>
+          </div>
+          <label class="check"><input id="no_display" type="checkbox"><span><span class="t">不在桌面显示</span><span class="d">仍可通过入口 URL 访问。</span></span></label>
+        </div>
+
+        <div id="wzStep4" style="display:none">
+          <h2>确认并生成</h2>
+          <p class="lede">生成后会调用应用中心安装；升级会先卸载旧版本，失败时尽量回滚到上一版。</p>
+          <dl class="summary" id="summary"></dl>
+          <div id="applyBox" style="display:none">
+            <div class="progress">
+              <div class="progress-steps" id="progressSteps">
+                <div class="pstep" data-p="validate"><span class="ic">1</span><span>校验配置</span></div>
+                <div class="pstep" data-p="build"><span class="ic">2</span><span>生成安装包</span></div>
+                <div class="pstep" data-p="install"><span class="ic">3</span><span>安装到应用中心</span></div>
+                <div class="pstep" data-p="start"><span class="ic">4</span><span>启动并等待 running</span></div>
+                <div class="pstep" data-p="done"><span class="ic">5</span><span>完成</span></div>
+              </div>
+            </div>
+            <div id="applyAlert"></div>
+            <div id="applyLinks" style="margin-top:12px"></div>
+          </div>
+        </div>
+
+        <div class="wizard-foot">
+          <button id="backBtn" class="btn" type="button" style="visibility:hidden">上一步</button>
+          <div style="display:flex;gap:8px">
+            <button id="cancelBtn" class="btn ghost" type="button">取消</button>
+            <button id="nextBtn" class="btn primary" type="button">下一步</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+<div id="modalRoot"></div>
+<div id="toastWrap" class="toast-wrap"></div>
+<script src="app.js"></script>
+</body>
+</html>

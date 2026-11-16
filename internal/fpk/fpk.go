@@ -21,6 +21,10 @@ import (
 // four-space indentation; a minified object can be rejected at install time.
 const privilegeJSON = "{\n    \"defaults\":\n    {\n        \"run-as\": \"package\"\n    }\n}"
 
+// managerPrivilegeJSON runs the manager as root: it calls appcenter-cli, which
+// needs root to reach the appcenter rpcbroker socket (V1 #10).
+const managerPrivilegeJSON = "{\n    \"defaults\":\n    {\n        \"run-as\": \"root\"\n    }\n}"
+
 type Assets struct {
 	ProxyBinary []byte
 	Icon64      []byte
@@ -37,6 +41,60 @@ type Result struct {
 	SHA256   string
 	Size     int64
 	Manifest string
+}
+
+// ManagerOptions builds the daili.manager fpk. It embeds both binaries so the
+// manager can generate proxy packages without relying on external files.
+type ManagerOptions struct {
+	ManagerBinary []byte
+	ProxyBinary   []byte
+	Icon64        []byte
+	Icon256       []byte
+	Version       string
+	Platform      string // x86 or arm; empty means x86
+}
+
+// BuildManager writes the manager fpk.
+func BuildManager(w io.Writer, opts ManagerOptions) (Result, error) {
+	var zero Result
+	if len(opts.ManagerBinary) == 0 {
+		return zero, fmt.Errorf("manager binary is empty")
+	}
+	if len(opts.ProxyBinary) == 0 {
+		return zero, fmt.Errorf("proxy binary is empty")
+	}
+	if err := checkIcon("ICON.PNG", opts.Icon64, 64); err != nil {
+		return zero, err
+	}
+	if err := checkIcon("ICON_256.PNG", opts.Icon256, 256); err != nil {
+		return zero, err
+	}
+	platform := opts.Platform
+	if platform == "" {
+		platform = "x86"
+	}
+	if platform != "x86" && platform != "arm" {
+		return zero, fmt.Errorf("platform must be x86 or arm")
+	}
+	version := opts.Version
+	if version == "" {
+		version = "1.0.0"
+	}
+	appTGZ, err := buildManagerAppTGZ(opts)
+	if err != nil {
+		return zero, err
+	}
+	checksum := md5.Sum(appTGZ)
+	manifest := buildManagerManifest(platform, version, hex.EncodeToString(checksum[:]))
+	var pkg bytes.Buffer
+	if err := writeOuter(&pkg, opts.Icon64, opts.Icon256, managerPrivilegeJSON, appTGZ, manifest, managerMainScript(), managerInstallCallbackScript()); err != nil {
+		return zero, err
+	}
+	if _, err := w.Write(pkg.Bytes()); err != nil {
+		return zero, err
+	}
+	sum := sha256.Sum256(pkg.Bytes())
+	return Result{SHA256: hex.EncodeToString(sum[:]), Size: int64(pkg.Len()), Manifest: manifest}, nil
 }
 
 // BuildProxy writes one proxy fpk. The package is deterministic for the same
@@ -73,7 +131,7 @@ func BuildProxy(w io.Writer, opts BuildOptions) (Result, error) {
 	manifest := buildManifest(s, platform, hex.EncodeToString(checksum[:]))
 
 	var pkg bytes.Buffer
-	if err := writeOuter(&pkg, s, opts.Assets, appTGZ, manifest); err != nil {
+	if err := writeOuter(&pkg, opts.Assets.Icon64, opts.Assets.Icon256, privilegeJSON, appTGZ, manifest, mainScript(s.AppName), installCallbackScript()); err != nil {
 		return zero, err
 	}
 	if _, err := w.Write(pkg.Bytes()); err != nil {
@@ -97,7 +155,7 @@ func checkIcon(name string, data []byte, want int) error {
 	return nil
 }
 
-func writeOuter(w io.Writer, s spec.ProxySpec, assets Assets, appTGZ []byte, manifest string) error {
+func writeOuter(w io.Writer, icon64, icon256 []byte, privilege string, appTGZ []byte, manifest, mainBody, callbackBody string) error {
 	gw := gzip.NewWriter(w)
 	tw := tar.NewWriter(gw)
 
@@ -107,13 +165,13 @@ func writeOuter(w io.Writer, s spec.ProxySpec, assets Assets, appTGZ []byte, man
 	if err := write("manifest", 0o644, []byte(manifest)); err != nil {
 		return err
 	}
-	if err := write("ICON.PNG", 0o644, assets.Icon64); err != nil {
+	if err := write("ICON.PNG", 0o644, icon64); err != nil {
 		return err
 	}
-	if err := write("ICON_256.PNG", 0o644, assets.Icon256); err != nil {
+	if err := write("ICON_256.PNG", 0o644, icon256); err != nil {
 		return err
 	}
-	if err := write("config/privilege", 0o644, []byte(privilegeJSON)); err != nil {
+	if err := write("config/privilege", 0o644, []byte(privilege)); err != nil {
 		return err
 	}
 	if err := write("config/resource", 0o644, []byte("{}")); err != nil {
@@ -122,7 +180,7 @@ func writeOuter(w io.Writer, s spec.ProxySpec, assets Assets, appTGZ []byte, man
 	if err := write("app.tgz", 0o644, appTGZ); err != nil {
 		return err
 	}
-	if err := write("cmd/main", 0o755, []byte(mainScript(s.AppName))); err != nil {
+	if err := write("cmd/main", 0o755, []byte(mainBody)); err != nil {
 		return err
 	}
 	for _, name := range []string{
@@ -132,7 +190,7 @@ func writeOuter(w io.Writer, s spec.ProxySpec, assets Assets, appTGZ []byte, man
 	} {
 		body := noopScript()
 		if name == "cmd/install_callback" {
-			body = installCallbackScript()
+			body = callbackBody
 		}
 		if err := write(name, 0o755, []byte(body)); err != nil {
 			return err

@@ -34,6 +34,7 @@ type VerifyResult struct {
 	Size                 int64
 	AppTGZChecksum       string
 	ProxySize            int64
+	ManagerSize          int64
 }
 
 var outerMembers = map[string]bool{
