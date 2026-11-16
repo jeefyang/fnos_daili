@@ -244,6 +244,13 @@ appcenter-cli list 2>&1 | grep verify.probe || true
 - 卸载（11:53）：`uninstall verify.probe` 输出 `[Info]Uninstall checking`、`- uninstalling....`、`Application [verify.probe] uninstall success`，exit 0；`list` 中消失。
 - install-local（11:54–12:03，多组复现）：源码包 SHA256 `fe325155ff6bb26f2eb5c999473e90e33e6ec43ce3ca9b1d416490dce02221c1`。无论 `-d /tmp/...`、`-d /root/...`、`cd` 到包目录不传 `-d`、`-a no`、换 appname `verify.probe2`，都在 `Verifying files` → `installing` 后报 `[Error]Something wrong with appcenter: code 10237`，随后 `install-local` 空指针 panic（`install_local.go:135`），exit 2；状态始终 `noinstall`。`/tmp` 未挂 noexec，`cmd/*` 均 0755 且可直接执行，故不是钩子执行位问题。结论：**本机 install-local 不可用**，与社区记录的 fnOS 1.2.0203 `10237`（staging 目录 chown/执行位问题）一致；T2 必须走 `install-fpk`。
 - install-fpk 复测（12:03）：`install-fpk -v 1 /tmp/verify.probe.fpk` 输出 `[Info]Installation complete. Use appcenter-cli start verify.probe to launch the application.`，exit 0；状态先 `starting`，随后 `running`。已安装时再次 `install-fpk` 输出 `[Info]Application [verify.probe] is installed.`，exit 0，状态保持 `running`，不重装、不报错。T2 用 `list/status` 区分“首次安装 / 已安装拒绝”，不能只看 exit code。
+- 失败注入（12:08）：
+  - starting 状态 `uninstall` 报 `10500`；等 running 后重试才成功。
+  - 把 `manifest.checksum` 改成全 0，`install-fpk` 仍 `Installation complete`、安装成功并进入 starting。**install-fpk 不校验 checksum**，T2 不能把它当完整性校验。
+  - 删掉 `config/resource`，`install-fpk` 在 `Verifying files` 后报 `10111`，exit 0，原应用不受影响。结构校验存在，但错误也走 exit 0。
+  - fpk 内是 `app.tgz`，不是展开的 `app/`；`app/ui/config` 在 `app.tgz` 里。
+- 失败注入（13:32）：把 `manifest.desktop_applaunchname` 改成 `verify.probe.NOPE`，`app.tgz` 内 `app/ui/config` 的键仍是 `verify.probe.Application`；`install-fpk` 仍安装成功并进入 starting。**不校验 manifest 与 UI config 的跨文件一致性**；T2 必须在生成时自己保证一致，否则能装上但桌面图标可能打不开。
+- 恢复尝试：badname 处于 starting 时 uninstall 又报 10500，随后 install 因已安装被拒（`Application [verify.probe] is installed.`），状态最终 running。说明“start 未完成”时任何卸载/重装都要先等 running，且失败后不能假设应用已清空。
 
 ## 结果与结论
 
