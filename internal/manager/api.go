@@ -45,6 +45,7 @@ func (s *Service) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/volumes", s.handleVolumes)
 	mux.HandleFunc("GET /api/operations/{id}", s.handleOperation)
 	mux.HandleFunc("GET /{$}", s.handleIndex)
+	mux.HandleFunc("GET /index.html", s.handleIndex)
 	mux.Handle("/", ui)
 	return s.withCSRF(mux)
 }

@@ -24,6 +24,11 @@
     return err.message || String(err);
   }
 
+  function apiURL(path) {
+    var m = location.pathname.match(/^(.*\/index\.cgi)(?:\/.*)?$/);
+    return m ? m[1] + path : path;
+  }
+
   function api(path, opts) {
     opts = opts || {};
     var headers = { 'Accept': 'application/json' };
@@ -31,7 +36,7 @@
     if (opts.method && opts.method !== 'GET') headers['X-CSRF-Token'] = token;
     var init = { method: opts.method || 'GET', headers: headers, credentials: 'same-origin' };
     if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
-    return fetch(path, init).then(function (res) {
+    return fetch(apiURL(path), init).then(function (res) {
       return res.text().then(function (text) {
         var data = null;
         try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
