@@ -1,6 +1,6 @@
 # 安装链上机验证（V1 #10）
 
-状态：进行中（2026-11-16）。只做验证，不改产品代码。
+状态：已完成（2026-11-16）。只做验证，不改产品代码。
 
 目标：在目标飞牛上确认 `appcenter-cli` 与本地安装/卸载/升级链路的真实行为，给「生成、安装、升级、卸载与状态存储」提供可直接引用的命令与结论。
 
@@ -256,4 +256,10 @@ appcenter-cli list 2>&1 | grep verify.probe || true
 
 ## 结果与结论
 
-待填。
+- **CLI**：实际路径 `/usr/local/bin/appcenter-cli`，版本 1.0.2，`root:root 755`；非 root 因 `/run/trim_app_cgi/rpcbroker` 权限直接 panic。T2 用 `command -v appcenter-cli`，回退 `/usr/local/bin/appcenter-cli`，并以 root 调用。
+- **安装**：`install-fpk -v <volume> <fpk>` 可用；本机一次 10.3s。安装后先 `starting`，再到 `running`（本案约 3.5 分钟）；轮询 `list` 或 `status 2>&1`，不要用 `status | tail -n1`。`10500` = 还没起来，不是永久失败。
+- **卸载**：`uninstall <appname>` 可用，成功输出以 `uninstall success` 结尾；`starting` 时会被 `10500` 拒绝，必须等 `running`。
+- **重复安装**：已安装时 `install-fpk` 输出 `Application [<app>] is installed.` 且 exit 0，不重装；升级 = 先 `uninstall` 再 `install-fpk`。
+- **校验边界**：结构缺失（如 `config/resource`）报 `10111`；`checksum` 不校验；`desktop_applaunchname` 与 `app.tgz/ui/config` 键不一致仍安装成功，生成时必须自己保证一致。
+- **包结构**：`app.tgz` 根下直接是 `server`、`ui/`、`www`、`config/`，没有 `app/` 前缀；`ui/config` 在 `app.tgz` 内。
+- **结论**：T2 及实现只走 `install-fpk`，不要用 `install-local`；CLI 成功/失败经常都 exit 0，必须同时解析输出与状态。
