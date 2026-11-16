@@ -147,3 +147,8 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Local Go toolchain and scratch
+.tools/
+.tmp/
+.tmp-research/
