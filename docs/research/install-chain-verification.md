@@ -241,6 +241,8 @@ appcenter-cli list 2>&1 | grep verify.probe || true
   - `start` 输出 `- starting..` + `Launching complete. View logs with: /var/log/apps/verify.probe.log`，exit 0，约 2,047 ms；紧接着 status 就是 `running`，新进程 `sleep 600`。
   - 再 `stop` 成功，状态 `stopped`。
 - 结论：10500 只在应用仍处于 `starting` 时出现；running/stopped 状态下 start/stop 正常且快。install-fpk 后的初始 starting 状态需要轮询，不能立刻 start/stop；CLI 失败和成功都可能 exit 0，T2 必须同时解析 stdout 与 status。
+- 卸载（11:53）：`uninstall verify.probe` 输出 `[Info]Uninstall checking`、`- uninstalling....`、`Application [verify.probe] uninstall success`，exit 0；`list` 中消失。
+- install-local（11:54）：源码包 SHA256 `fe325155ff6bb26f2eb5c999473e90e33e6ec43ce3ca9b1d416490dce02221c1`；`install-local -d /tmp/verify.probe-src/verify.probe -v 1` 输出 `Verifying files.....`、`installing..`、`[Error]Something wrong with appcenter: code 10237`，exit 0，耗时 6,353 ms；之后 status `noinstall`，`list` 无该应用。10237 待定位；优先怀疑刚卸载后的 appname 残留/重装竞态，或 install-local 与 install-fpk 的打包差异。
 
 ## 结果与结论
 
