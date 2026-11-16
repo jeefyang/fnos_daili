@@ -861,3 +861,4 @@ T2 的“端口 bind 预检”作废：v1 不分配入口端口，manifest 不�
 | Location/Cookie/安全头 | T5 #3（Cookie Path 按 CGI 修正） | §7.2、§7.3 |
 | WS/SSE、超时、流式 | T5 #3（WS 改为 501） | §6、§7.2、§13 |
 | CGI 入口 | 2026-11-16 源码复核 | §3、§5、§6 |
+13. `run-as root` + 空 `install_type` 的组合未在真机验证（V1 只验证了 package + 空 install_type）。首个托管台包安装时先做冒烟；若应用中心拒绝，回退写 `install_type=root` 并记录，不影响代理包。
