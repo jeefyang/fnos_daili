@@ -237,7 +237,7 @@ func TestCGIStripAndForward(t *testing.T) {
 	s := httptest.NewServer(cgiHandler)
 	defer s.Close()
 
-	req, _ := http.NewRequest("GET", s.URL+"/index.cgi/hello?x=1", nil)
+	req, _ := http.NewRequest("GET", s.URL+"/cgi/ThirdParty/proxy.test/index.cgi/hello?x=1", nil)
 	req.Host = "fnos.local"
 	resp, err := s.Client().Do(req)
 	if err != nil {
@@ -307,5 +307,26 @@ func TestCGISocketFailure(t *testing.T) {
 func TestNewCGIEmptySocket(t *testing.T) {
 	if _, err := NewCGI("", Options{}); err == nil {
 		t.Fatal("NewCGI accepted empty socket")
+	}
+}
+
+func TestSplitCGIPath(t *testing.T) {
+	cases := []struct {
+		in    string
+		want  string
+		valid bool
+	}{
+		{"/cgi/ThirdParty/daili.manager/index.cgi", "/", true},
+		{"/cgi/ThirdParty/daili.manager/index.cgi/", "/", true},
+		{"/cgi/ThirdParty/daili.manager/index.cgi/api/targets", "/api/targets", true},
+		{"/index.cgi/x", "/x", true},
+		{"/index.cgi2/x", "", false},
+		{"/not-cgi", "", false},
+	}
+	for _, c := range cases {
+		got, ok := splitCGIPath(c.in)
+		if got != c.want || ok != c.valid {
+			t.Errorf("splitCGIPath(%q) = %q, %v; want %q, %v", c.in, got, ok, c.want, c.valid)
+		}
 	}
 }

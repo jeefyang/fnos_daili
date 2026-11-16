@@ -459,6 +459,12 @@ func (s *Service) reconcile(ctx context.Context, startup bool) {
 	for i := range s.st.Targets {
 		t := &s.st.Targets[i]
 		managed[t.Spec.AppName] = true
+		if s.running[t.Spec.ID] {
+			// A live operation owns this target's runtime state; listing must not
+			// mistake the brief gap during reinstall for a missing app or mark
+			// the operation interrupted.
+			continue
+		}
 		app, ok := byName[t.Spec.AppName]
 		if !ok {
 			if t.Runtime.State == state.StateRunning || t.Runtime.State == state.StateInstalledNotRunning || t.Runtime.State == state.StateStarting {

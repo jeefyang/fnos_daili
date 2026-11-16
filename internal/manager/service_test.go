@@ -34,8 +34,9 @@ func testELF() []byte {
 }
 
 type fakeCLI struct {
-	mu   sync.Mutex
-	apps map[string]string
+	mu          sync.Mutex
+	apps        map[string]string
+	installGate chan struct{}
 }
 
 func (f *fakeCLI) Run(ctx context.Context, dir string, args ...string) (cli.Result, error) {
@@ -58,6 +59,12 @@ func (f *fakeCLI) Run(ctx context.Context, dir string, args ...string) (cli.Resu
 		}
 		return cli.Result{Stdout: b.String()}, nil
 	case "install-fpk":
+		gate := f.installGate
+		f.mu.Unlock()
+		if gate != nil {
+			<-gate
+		}
+		f.mu.Lock()
 		v, err := fpk.VerifyFile(args[len(args)-1])
 		if err != nil {
 			return cli.Result{Stderr: err.Error(), ExitCode: 1}, fmt.Errorf("bad fpk: %w", err)
@@ -206,6 +213,62 @@ func TestApplyInstallsAndDeleteRemoves(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(s.DataDir(), "packages", "daili.demo")); !os.IsNotExist(err) {
 		t.Fatalf("package dir still exists: %v", err)
+	}
+}
+
+func TestDeleteDraftWithoutInstalledAppRemovesState(t *testing.T) {
+	s, _ := newTestService(t)
+	got, err := s.Create(input())
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err := s.Delete(got.Spec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done := waitOp(t, s, got.Spec.ID, op); done.Status != state.OpSucceeded {
+		t.Fatalf("operation = %+v", done)
+	}
+	if _, ok := s.Get(got.Spec.ID); ok {
+		t.Fatal("draft target still exists after delete")
+	}
+}
+
+func TestReconcileDoesNotInterruptLiveOperation(t *testing.T) {
+	s, fake := newTestService(t)
+	got, err := s.Create(input())
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := make(chan struct{})
+	fake.mu.Lock()
+	fake.installGate = gate
+	fake.mu.Unlock()
+	op, err := s.Apply(got.Spec.ID, "install")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := s.running[got.Spec.ID]; ok {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if _, ok := s.running[got.Spec.ID]; !ok {
+		t.Fatal("operation did not start")
+	}
+	s.Reconcile(context.Background())
+	v, _ := s.Get(got.Spec.ID)
+	if v.Runtime.State == state.StateMissing {
+		t.Fatalf("live target marked missing: %+v", v.Runtime)
+	}
+	if v.Runtime.LastOperation == nil || v.Runtime.LastOperation.Status != state.OpRunning {
+		t.Fatalf("live operation was interrupted: %+v", v.Runtime.LastOperation)
+	}
+	close(gate)
+	if done := waitOp(t, s, got.Spec.ID, op); done.Status != state.OpSucceeded {
+		t.Fatalf("operation = %+v", done)
 	}
 }
 

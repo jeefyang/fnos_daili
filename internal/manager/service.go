@@ -49,6 +49,7 @@ type Service struct {
 	token   string
 
 	mu        sync.Mutex
+	opMu      sync.Mutex
 	st        state.State
 	unmanaged []UnmanagedApp
 	running   map[string]bool

@@ -68,6 +68,8 @@ func (s *Service) Apply(id, kind string) (string, error) {
 	s.mu.Unlock()
 
 	go func() {
+		s.opMu.Lock()
+		defer s.opMu.Unlock()
 		ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
 		defer cancel()
 		err := s.runApply(ctx, id, kind, opID)
@@ -499,10 +501,24 @@ func (s *Service) Delete(id string) (string, error) {
 	s.mu.Unlock()
 
 	go func() {
+		s.opMu.Lock()
+		defer s.opMu.Unlock()
 		ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
 		defer cancel()
+		app, err := s.findApp(ctx, appname)
+		if err != nil {
+			_ = s.setState(id, state.StateUninstallFailed, err.Error())
+			s.finishOperation(id, opID, err)
+			return
+		}
+		if app == nil {
+			if err := s.removeTarget(id, appname, opID); err != nil {
+				s.logger.Printf("remove target %s: %v", appname, err)
+			}
+			return
+		}
 		unCtx, c2 := context.WithTimeout(ctx, cliUninstallTimeout)
-		_, err := s.cli.Uninstall(unCtx, appname)
+		_, err = s.cli.Uninstall(unCtx, appname)
 		c2()
 		if err != nil {
 			if is10500(err) {
@@ -525,34 +541,46 @@ func (s *Service) Delete(id string) (string, error) {
 			s.finishOperation(id, opID, err)
 			return
 		}
-		s.mu.Lock()
-		t := s.findLocked(id)
-		if t != nil {
-			if op := t.Runtime.LastOperation; op != nil {
-				now := s.now()
-				op.Status = state.OpSucceeded
-				op.Step = "done"
-				op.FinishedAt = &now
-				s.recordDoneLocked(opID, *op)
-			}
-			idx := -1
-			for i := range s.st.Targets {
-				if s.st.Targets[i].Spec.ID == id {
-					idx = i
-					break
-				}
-			}
-			if idx >= 0 {
-				s.st.Targets = append(s.st.Targets[:idx], s.st.Targets[idx+1:]...)
-			}
-			_ = s.saveLocked()
+		if err := s.removeTarget(id, appname, opID); err != nil {
+			s.logger.Printf("remove target %s: %v", appname, err)
 		}
-		delete(s.running, id)
-		delete(s.ops, opID)
-		s.mu.Unlock()
-		_ = os.RemoveAll(filepath.Join(s.cfg.DataDir, "packages", appname))
 	}()
 	return opID, nil
+}
+
+// removeTarget finalizes a successful uninstall: it records the terminal
+// operation, drops the target from state, releases the operation slots, and
+// deletes the target's cached packages.
+func (s *Service) removeTarget(id, appname, opID string) error {
+	s.mu.Lock()
+	if t := s.findLocked(id); t != nil {
+		if op := t.Runtime.LastOperation; op != nil && op.ID == opID {
+			now := s.now()
+			op.Status = state.OpSucceeded
+			op.Step = "done"
+			op.FinishedAt = &now
+			op.Error = ""
+			s.recordDoneLocked(opID, *op)
+		}
+		idx := -1
+		for i := range s.st.Targets {
+			if s.st.Targets[i].Spec.ID == id {
+				idx = i
+				break
+			}
+		}
+		if idx >= 0 {
+			s.st.Targets = append(s.st.Targets[:idx], s.st.Targets[idx+1:]...)
+		}
+	}
+	delete(s.running, id)
+	delete(s.ops, opID)
+	err := s.saveLocked()
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return os.RemoveAll(filepath.Join(s.cfg.DataDir, "packages", appname))
 }
 
 // Rollback reinstalls the last-known-good package.
@@ -590,6 +618,8 @@ func (s *Service) Rollback(id string) (string, error) {
 	s.mu.Unlock()
 
 	go func() {
+		s.opMu.Lock()
+		defer s.opMu.Unlock()
 		ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
 		defer cancel()
 		err := s.runRollback(ctx, id, opID, specCopy, pkg)

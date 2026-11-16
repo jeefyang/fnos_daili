@@ -45,10 +45,7 @@ func NewCGI(socket string, opts Options) (http.Handler, error) {
 	h := &cgiHandler{logger: logger}
 	h.proxy = &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
-			clean := strings.TrimPrefix(pr.In.URL.Path, "/index.cgi")
-			if clean == "" {
-				clean = "/"
-			}
+			clean, _ := splitCGIPath(pr.In.URL.Path)
 			pr.Out.URL.Scheme = "http"
 			pr.Out.URL.Host = "unix"
 			pr.Out.URL.Path = clean
@@ -73,7 +70,7 @@ func (h *cgiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	id := newRequestID()
 	w.Header().Set("X-Request-Id", id)
 	r = r.WithContext(context.WithValue(r.Context(), requestIDKey, id))
-	if r.URL.Path != "/index.cgi" && !strings.HasPrefix(r.URL.Path, "/index.cgi/") {
+	if _, ok := splitCGIPath(r.URL.Path); !ok {
 		writeError(w, id, http.StatusNotFound, "Not found")
 		return
 	}
@@ -82,6 +79,25 @@ func (h *cgiHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.proxy.ServeHTTP(w, r)
+}
+
+// splitCGIPath strips everything through the fnOS CGI script segment. fnOS
+// invokes the script at /cgi/ThirdParty/<appname>/index.cgi, so the runtime
+// path seen by the CGI process is that full path rather than "/index.cgi".
+func splitCGIPath(p string) (string, bool) {
+	const marker = "/index.cgi"
+	i := strings.Index(p, marker)
+	if i < 0 {
+		return "", false
+	}
+	rest := p[i+len(marker):]
+	if rest == "" {
+		return "/", true
+	}
+	if !strings.HasPrefix(rest, "/") {
+		return "", false
+	}
+	return rest, true
 }
 
 func isUpgrade(r *http.Request) bool {
