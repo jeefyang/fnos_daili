@@ -18,6 +18,10 @@
 
 fnOS 应用在桌面或应用中心暴露出来的打开方式，带标题、图标、`ui_type`、`all_users`、`url` 等字段。沿用 watchcow 的入口模型；fnOS 允许一个应用有多个入口，本项目每个代理应用只生成一个。代理应用的入口 `url` 是 `/`、`port` 是分配到的独立端口；托管台的入口 `url` 是 CGI 路径。两者都不指向目标地址。
 
+## 应用子域 (fnDomain)
+
+FN Connect 公网访问时，每个应用入口在外网暴露的独有子域：`https://<fnDomain>.<当前域名><path>`。`fnDomain` 由入口键（`desktop_applaunchname`）小写、点换成连字符得到，默认入口名 `Application` 省略；本项目入口键固定 `<appname>.main`，故外网地址为 `https://<appname 点→连字符>-main.<当前域名>/`。它由飞牛服务端下发，需要应用在 FN Connect 里发布；登录态由 FN Connect 校验，应用自己仍按入口可见性与认证决定是否放行。
+
 ## 可见性 (all_users)
 
 入口字段，决定哪些飞牛用户能在桌面看到图标；`false` 仅管理员可见，`true` 所有登录用户可见。它不控制入口端口或 CGI 路径的可达性，也不是登录或鉴权。

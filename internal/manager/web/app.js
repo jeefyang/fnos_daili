@@ -101,7 +101,10 @@
   function renderNetBanner() {
     var b = $('netBanner');
     if (!b) return;
-    if (state.network && state.network.lan === false) {
+    if (fnConnectHost()) {
+      b.style.display = '';
+      b.textContent = '当前通过飞牛 FN Connect 访问：入口使用应用子域（https://<appname>-main.<当前域名>/）。若打不开，请先在 FN Connect 里发布该应用。';
+    } else if (state.network && state.network.lan === false) {
       b.style.display = '';
       b.textContent = '当前看起来是通过外网访问。列表里的入口使用飞牛所在局域网的独立端口，通常没有映射到公网，直接打开可能打不开。';
     } else {
@@ -132,7 +135,7 @@
 
   function openEntry(url) {
     if (!url) return;
-    if (state.network && state.network.lan === false) {
+    if (!fnConnectHost() && state.network && state.network.lan === false) {
       openModal('外网访问提示',
         '<div class="alert warn">当前看起来是通过外网访问。这个入口是飞牛所在局域网的独立端口，通常没有映射到公网，直接打开多半不可达。</div>' +
         '<div class="field" style="margin-top:12px"><label>入口地址</label><div class="mono" style="word-break:break-all">' + esc(url) + '</div></div>',
@@ -173,10 +176,30 @@
     return { text: v[0], cls: v[1] };
   }
 
-  // Proxy apps listen on their own TCP port, so the entry is a different
-  // origin. The desktop page is HTTPS, but top-level navigation to HTTP is
-  // allowed (it is not mixed content).
+  // FN Connect serves every app entry under its own subdomain:
+  // https://<fnDomain>.<current host>/<path>. fnDomain is the entry key with
+  // dots replaced by hyphens; the default "Application" suffix is dropped.
+  // Our generated entries are always "<appname>.main", so the subdomain is
+  // "<appname dots->hyphens>-main". See docs/research/fnos-fnconnect-entry-url.md.
+  var FN_CONNECT_SUFFIXES = ['.fnos.net', '.5ddd.com', '.trzznas.com'];
+
+  function fnConnectHost() {
+    var host = String(location.hostname || '').toLowerCase();
+    for (var i = 0; i < FN_CONNECT_SUFFIXES.length; i++) {
+      var s = FN_CONNECT_SUFFIXES[i];
+      if (host.length > s.length && host.slice(-s.length) === s) return host;
+    }
+    return '';
+  }
+
+  function fnEntryHost(appname) {
+    if (!appname) return '';
+    return String(appname).toLowerCase().replace(/\./g, '-') + '-main';
+  }
+
   function entryURL(appname, port) {
+    var fnHost = fnConnectHost();
+    if (fnHost) return appname ? 'https://' + fnEntryHost(appname) + '.' + fnHost + '/' : '';
     if (!port) return '';
     var host = location.hostname || 'localhost';
     if (host.indexOf(':') >= 0 && host.charAt(0) !== '[') host = '[' + host + ']';
@@ -242,10 +265,13 @@
           opText = '—';
         }
         var url = entryURL(sp.appname, sp.port);
-        var lanBlocked = state.network && state.network.lan === false;
+        var fn = !!fnConnectHost();
+        var lanBlocked = !fn && state.network && state.network.lan === false;
+        var label = fn ? url.replace(/^https:\/\//, '') : ':' + (sp.port || '') + '/';
         var entryHtml = url
-          ? '<a class="mono entry-link" style="font-size:11.5px" href="' + esc(url) + '" data-entry="1" data-url="' + esc(url) + '" target="_blank" rel="noopener">:' + esc(sp.port) + '/</a>'
+          ? '<a class="mono entry-link" style="font-size:11.5px;word-break:break-all" href="' + esc(url) + '" data-entry="1" data-url="' + esc(url) + '" target="_blank" rel="noopener">' + esc(label) + '</a>'
           : '<span class="faint">未分配</span>';
+        if (url && fn) entryHtml += '<div class="faint" style="font-size:11px;margin-top:3px">FN Connect 应用子域</div>';
         if (url && lanBlocked) entryHtml += '<div class="faint" style="font-size:11px;margin-top:3px">外网访问，端口通常不可达</div>';
         var actions = [];
         if (rt.state === 'running' || rt.state === 'installed_not_running') {
@@ -694,7 +720,7 @@
       ['模式', d.mode === 'direct' ? '直连 302' : '反向代理'],
       ['显示名称', d.display_name],
       ['appname', d.appname],
-      ['入口', state.editPort ? entryURL(d.appname, state.editPort) : '生成时自动分配端口'],
+      ['入口', fnConnectHost() ? (d.appname ? entryURL(d.appname, state.editPort) : '生成时按 appname 生成应用子域') : (state.editPort ? entryURL(d.appname, state.editPort) : '生成时自动分配端口')],
       ['安装卷', '卷 ' + d.install_volume],
       ['图标', state.iconData ? '自定义（待保存）' : (state.iconRemove ? '恢复默认' : (state.editHasIcon ? '当前为自定义' : '默认'))],
       ['Basic Auth', d.basic_auth ? ('开启 · ' + d.basic_auth.username) : '关闭'],
