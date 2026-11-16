@@ -1,0 +1,13 @@
+appname = verify.probe
+version = 1.0.0
+display_name = Verify Probe
+desc = Disposable package for appcenter-cli verification
+platform = x86
+source = thirdparty
+maintainer = fnos_daili
+distributor = fnos_daili
+os_min_version = 0.9.0
+desktop_uidir = ui
+desktop_applaunchname = verify.probe.Application
+service_port = 28999
+checkport = false

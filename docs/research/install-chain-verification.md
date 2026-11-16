@@ -8,14 +8,16 @@
 
 | 项 | 值 |
 | --- | --- |
-| 飞牛版本 | Debian 12 (bookworm)；`/etc/version` 不存在，fnOS 版本待 root 确认 |
+| 飞牛版本 | fnOS v1.2.1011，底层 Debian 12 (bookworm)；`/etc/version` 不存在，版本在 `/etc/issue` |
 | 内核 / 架构 | Linux 6.18.18.c1186-trim，x86_64 |
-| 执行身份 | uid=1000(jeef)，gid=1001(Users)，附加组 1000(Administrators)；非 root |
+| 执行身份 | root 下 uid=0(root)；普通用户 uid=1000(jeef)，附加组 1000(Administrators)，非 root 不可用 |
 | appcenter-cli 路径 | `/usr/local/bin/appcenter-cli`；`/var/apps/appcenter/target/bin/appcenter-cli` 与 `/usr/bin/appcenter-cli` 不存在 |
 | appcenter-cli 权限/属主 | `-rwxr-xr-x root:root`，8,005,856 字节，ELF 64-bit x86-64，动态链接，stripped |
 | CLI 哈希 | `3d7cca24523d5d03c1ad9028ca332b4410319e837a2d508d80bccb7661482626` |
 | fnpack | `/usr/local/bin/fnpack` 存在 |
-| 默认卷 | 待 root 确认；可见卷 /vol1、/vol2、/vol3（另有 /vol00、/vol02） |
+| 默认卷 | 1；可见卷 /vol1、/vol2、/vol3（另有 /vol00、/vol02） |
+| rpcbroker | `/run/trim_app_cgi` 777 root:root；`rpcbroker` socket 660 root:root |
+| CLI 版本 | 1.0.2（`--help` 输出；`--version` 不是合法 flag） |
 
 ## 第一段观察（非 root）
 
@@ -26,6 +28,34 @@ panic: ApplyPermission for '[com.trim.sysinfo com.trim.main]' error, dial unix /
 ```
 
 这不是“CLI 已被移除”，而是 CLI 初始化 trimrpc 时需要访问 `/run/trim_app_cgi/rpcbroker`。因此第一段只能证明：CLI 文件在、路径与哈希确定、非 root 不可用；子命令列表与参数必须用 root 重跑。
+
+## 第一段观察（root）
+
+root 下 CLI 正常，版本 1.0.2。实际子命令：
+
+```
+install        Install an application.
+uninstall      Uninstall an application.
+start          Start an application.
+stop           Stop an application.
+check          Check whether an application is installed or not.
+status         Get status of an installed application.
+list           List all installed application informations.
+install-fpk    Install an application from fpk.
+install-local  Install an application from local application directory.
+manual-install Enable or disable manual installation feature in App Center.
+default-volume Setting the default volume for new application installations from the CLI.
+```
+
+关键参数（help 原文）：
+
+- `install-local`：`-a/--autostart`（默认 yes）、`-d/--dir`（应用源目录，默认当前目录）、`-e/--env`（环境变量文件，默认 ./.env）、`-v/--volume`（安装卷；升级时忽略）。
+- `install-fpk`：`-e/--env`、`-v/--volume`（升级时忽略）；位置参数 `[fpk]`。
+- `uninstall`、`start`、`stop`、`list`、`default-volume` 的 help 只显示命令名，没有列出 appname 位置参数；真实调用语法待安装测试确认。
+- `default-volume` 无参数输出 `1`。
+- `list` 输出带边框的表格：APP NAME / DISPLAY NAME / VERSION / STATUS / DEPENDENCY APPS；退出码 0。
+
+社区“install-fpk/install-local 在 1.1.31xx 已移除”的说法在 fnOS v1.2.1011 上不成立。
 
 ## 第一段：只读侦察（先跑，不安装）
 
@@ -112,18 +142,87 @@ df -h /vol* 2>&1 || true
 4. `list` 与 `default-volume` 的输出格式，便于后续解析。
 5. 固件版本与 CLI 哈希，便于判断社区“1.1.31xx 已移除”的说法是否适用于这台机器。
 
-## 第二段：安装测试（待第一段结果后补）
+## 第二段：安装测试
 
-不在第一段执行。等确认 CLI 子命令与参数后，再给测试 fpk、安装命令、失败注入步骤与记录表。
+测试包是 [fixtures/verify.probe](fixtures/verify.probe) 与 [fixtures/verify.probe.fpk](fixtures/verify.probe.fpk)：
 
-计划覆盖：
+- appname `verify.probe`，version `1.0.0`，入口 `verify.probe.Application`，端口 28999，不提供真实 HTTP 服务。
+- `cmd/main` 的 start 只启动 `sleep 600`；用来验证 install/start/stop/status/uninstall。
+- `config/privilege` 为 package；`config/resource` 为空。
+- fpk 由 fnpack 1.2.3 生成，`cmd/*` 在包内为 0755；`checksum=5a537ff21c5a0eb9224c43e5845330f9`。
 
-- 最小测试包 `verify.probe`：`install-local --volume <n>` 与 `install-fpk <fpk>` 各装一次，记录工作目录、stdout/stderr、退出码、耗时。
-- 安装后 `list` 是否出现、`start`/`stop` 是否可用、桌面入口是否出现。
-- 卸载：`uninstall` 是否需要先 `stop`，卸载后 `list` 是否清理。
-- 升级：同 appname 更高 version 覆盖安装 vs 卸载重装；失败时停在什么状态。
-- 失败注入：坏 checksum、appname 冲突、端口被占、`desktop_applaunchname` 不匹配、包结构缺文件。
-- 结论：可用 / 不可用 / 需替代路径；给 T2 可直接复制的命令清单。
+### 2.1 先补 help
+
+```sh
+for sub in check status install manual-install; do
+  echo "--- $sub --help"
+  appcenter-cli "$sub" --help 2>&1
+  echo "[exit=$?]"
+done
+```
+
+### 2.2 install-fpk
+
+```sh
+F=/tmp/verify.probe.fpk
+curl -fL -o "$F" https://raw.githubusercontent.com/jeefyang/fnos_daili/main/docs/research/fixtures/verify.probe.fpk
+
+start=$(date +%s%N)
+appcenter-cli install-fpk -v 1 "$F" 2>&1
+rc=$?
+end=$(date +%s%N)
+echo "[exit=$rc] [elapsed_ms=$(( (end - start) / 1000000 ))]"
+
+appcenter-cli list 2>&1 | grep verify.probe || true
+appcenter-cli check verify.probe 2>&1; echo "[check=$?]"
+appcenter-cli status verify.probe 2>&1; echo "[status=$?]"
+```
+
+### 2.3 启动/停止
+
+```sh
+appcenter-cli start verify.probe 2>&1; echo "[start=$?]"
+appcenter-cli status verify.probe 2>&1; echo "[status=$?]"
+appcenter-cli stop verify.probe 2>&1; echo "[stop=$?]"
+appcenter-cli status verify.probe 2>&1; echo "[status=$?]"
+```
+
+### 2.4 卸载
+
+先试 appname 位置参数；若报错，原样贴回，不要继续猜：
+
+```sh
+appcenter-cli stop verify.probe 2>&1; echo "[stop=$?]"
+appcenter-cli uninstall verify.probe 2>&1; echo "[uninstall=$?]"
+appcenter-cli list 2>&1 | grep verify.probe || echo "verify.probe gone"
+```
+
+### 2.5 install-local
+
+```sh
+S=/tmp/verify.probe-src.tar.gz
+curl -fL -o "$S" https://raw.githubusercontent.com/jeefyang/fnos_daili/main/docs/research/fixtures/verify.probe-src.tar.gz
+rm -rf /tmp/verify.probe-src && mkdir -p /tmp/verify.probe-src
+tar -xzf "$S" -C /tmp/verify.probe-src
+chmod +x /tmp/verify.probe-src/verify.probe/cmd/*
+
+start=$(date +%s%N)
+appcenter-cli install-local -d /tmp/verify.probe-src/verify.probe -v 1 2>&1
+rc=$?
+end=$(date +%s%N)
+echo "[exit=$rc] [elapsed_ms=$(( (end - start) / 1000000 ))]"
+
+appcenter-cli list 2>&1 | grep verify.probe || true
+```
+
+### 2.6 失败注入（单独一轮，确认安装/卸载语法后再做）
+
+- 改 fpk 一个字节（不碰 manifest 的 checksum 行），再装。
+- 同 appname 已安装时再装一次。
+- 端口 28999 被占时再装。
+- 把 manifest 的 `desktop_applaunchname` 改成不存在的入口再装。
+- 删掉 `config/resource` 或 `ICON_256.PNG` 再装。
+每种都记录：CLI 输出、退出码、`list` 状态、应用中心是否留下半装状态。
 
 ## 结果与结论
 

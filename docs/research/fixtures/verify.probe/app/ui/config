@@ -1,0 +1,13 @@
+{
+  ".url": {
+    "verify.probe.Application": {
+      "title": "Verify Probe",
+      "icon": "images/icon_{0}.png",
+      "type": "url",
+      "protocol": "http",
+      "port": "28999",
+      "url": "/",
+      "allUsers": false
+    }
+  }
+}
