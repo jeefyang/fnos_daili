@@ -224,6 +224,17 @@ appcenter-cli list 2>&1 | grep verify.probe || true
 - 删掉 `config/resource` 或 `ICON_256.PNG` 再装。
 每种都记录：CLI 输出、退出码、`list` 状态、应用中心是否留下半装状态。
 
+## 第二段观察（2026-11-16 11:43）
+
+- 下载的 fpk SHA256：`4786c2d649b33b4309ac1fe308fc90b401679d02ea3e84d08f73548c791de094`。
+- `install-fpk -v 1`：退出码 0，耗时 10,263 ms；输出 `Verifying files.....`、`installing......`、`[Info]Installation complete...`。
+- 安装后 `list`：`verify.probe / Verify Probe / 1.0.0 / starting`。
+- `check verify.probe`：输出 `Installed`，退出码 0（help 未列 appname，但实际接受位置参数）。
+- `status verify.probe`：输出 `starting`，退出码 0（同样实际接受 appname）。
+- `start verify.probe`：输出 `[Error]Something wrong with appcenter: code 10500`、`[Error]Failed to launch app. error code 10500..`，但**退出码 0**。
+- `stop verify.probe`：同样报 10500，**退出码 0**；状态仍是 `starting`。
+- 结论（暂定）：本地安装链路可用；但 CLI 的 start/stop 失败不会体现在退出码上，T2 不能只看 exit code。应用卡在 starting，需查 `cmd/main` 是否执行、服务端口 28999 是否监听、appcenter 日志里的 10500 含义。
+
 ## 结果与结论
 
 待填。
