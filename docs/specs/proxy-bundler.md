@@ -757,7 +757,7 @@ T2 的“端口 bind 预检”恢复：代理入口使用独立端口，分配�
 ### 10.1 四步向导
 
 1. **目标**：target_url 输入；test-target 按钮（非阻断）；格式错误才禁用下一步；反代模式显示“目标拦截”提示。
-2. **应用信息**：display_name、appname（预填 `全局前缀 + slug + 全局后缀 + "." + 4hex`，默认前缀 `proxy.`；可改，异步 check）、description、图标上传（PNG/JPEG，≤2MB，≥64×64；预览 64 档；可恢复默认；编辑时显示当前自定义图标）、version（高级折叠，默认 1.0.0）。新建与编辑用同一个向导，但入口分开：新建从空白开始，编辑回填已有 target 并锁定 appname；不再有“新建/编辑”页签。
+2. **应用信息**：display_name、appname（编辑时锁定在应用信息页；目标地址在第 1 步可直接改。预填 `全局前缀 + slug + 全局后缀 + "." + 4hex`，默认前缀 `proxy.`；可改，异步 check）、description、图标上传（PNG/JPEG，≤2MB，≥64×64；预览 64 档；可恢复默认；编辑时显示当前自定义图标）、version（高级折叠，默认 1.0.0）。新建与编辑用同一个向导，但入口分开：新建从空白开始并停在第 1 步；编辑回填已有 target 后也停在第 1 步（目标可二次编辑），appname 在应用信息页锁定，第 1 步给出“保存后会重新生成并重装，appname 与入口端口不变”的提示；左侧步骤栏可回到已走过的步骤，向前仍逐步骤校验。不再有“新建/编辑”页签。
 3. **入口与高级**：mode（reverse/direct）、ui_type（url/iframe）、all_users（默认 false）、no_display、entry_title、install_volume、skip_tls_verify（仅 https+reverse）、allow_loopback（仅 reverse）、Basic Auth（开关 + 用户名/密码，仅 reverse）；端口只读展示（新建时“生成时自动分配”，编辑时显示已分配端口）。
 4. **确认与生成**：摘要含图标来源（自定义/默认）、入口端口与最终 URL；生成按钮；进度 5 步（校验 → 生成包 → 安装 → 启动 → 完成）；失败停在对应步骤，提供下载 fpk、查看日志、重试；成功后 toast 提示并自动回到列表。
 

@@ -111,6 +111,7 @@ tbody tr:hover { background: #fbfdff; }
 .step.active { background: var(--brand-soft); color: var(--brand); }
 .step.active .num { background: var(--brand-2); color: #fff; border-color: var(--brand-2); }
 .step.done .num { background: var(--ok-soft); color: var(--ok); border-color: #b6e5dd; }
+.step.done, .step.active { cursor: pointer; }
 .wizard-body { padding: 26px 30px; display: flex; flex-direction: column; }
 .wizard-body h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.01em; }
 .wizard-body .lede { color: var(--muted); margin: 0 0 22px; }

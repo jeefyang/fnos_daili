@@ -464,6 +464,7 @@
     state.lastPackage = null;
     state.editPort = 0;
     state.editVolume = '';
+    state.maxStep = 1;
     state.editHasIcon = false;
     state.iconData = '';
     state.iconRemove = false;
@@ -489,6 +490,8 @@
     $('auth_pass').value = '';
     $('targetError').textContent = '';
     $('testResult').innerHTML = '';
+    $('targetNote').style.display = 'none';
+    $('targetNote').textContent = '';
     $('applyBox').style.display = 'none';
     $('applyAlert').innerHTML = '';
     $('applyLinks').innerHTML = '';
@@ -544,11 +547,14 @@
       $('authFields').style.display = '';
     }
     setMode(t.spec.mode || 'reverse');
-    showStep(2);
+    $('targetNote').style.display = '';
+    $('targetNote').textContent = '编辑中：目标地址可以直接改；保存后会重新生成安装包并重装这个代理应用，appname 与入口端口保持不变。';
+    showStep(1);
   }
 
   function showStep(n) {
     state.step = n;
+    if (n > (state.maxStep || 1)) state.maxStep = n;
     for (var i = 1; i <= 4; i++) {
       var sec = $('wzStep' + i);
       if (sec) sec.style.display = i === n ? '' : 'none';
@@ -933,6 +939,15 @@
     $('iconFile').addEventListener('change', onIconPick);
     $('iconReset').addEventListener('click', onIconReset);
     $('nextBtn').addEventListener('click', next);
+    // The rail lets you jump back to an earlier step (for example to change the
+    // target of an existing app); forward navigation always re-validates.
+    $('stepRail').addEventListener('click', function (e) {
+      var el = e.target.closest('.step');
+      if (!el || state.polling) return;
+      var n = Number(el.getAttribute('data-step'));
+      if (!n || n >= state.step || n > (state.maxStep || 1)) return;
+      showStep(n);
+    });
     $('backBtn').addEventListener('click', function () { if (state.step > 1) showStep(state.step - 1); });
     $('cancelBtn').addEventListener('click', function () {
       switchTab('list');

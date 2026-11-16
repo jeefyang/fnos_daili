@@ -151,6 +151,58 @@ func TestCreateAndUpdate(t *testing.T) {
 	}
 }
 
+func TestUpdateTargetMarksReapplyAndRebuilds(t *testing.T) {
+	s, _ := newTestService(t)
+	got, err := s.Create(input())
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err := s.Apply(got.Spec.ID, "install")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done := waitOp(t, s, got.Spec.ID, op); done.Status != state.OpSucceeded {
+		t.Fatalf("install operation = %+v", done)
+	}
+	before, _ := s.Get(got.Spec.ID)
+
+	in := input()
+	in.TargetURL = "http://192.168.123.200:8021"
+	upd, err := s.Update(got.Spec.ID, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upd.Spec.TargetURL != "http://192.168.123.200:8021" {
+		t.Fatalf("target_url = %q", upd.Spec.TargetURL)
+	}
+	if !upd.Runtime.NeedsReapply {
+		t.Fatal("needs_reapply = false after changing the target of an installed app")
+	}
+	if upd.Spec.Port != before.Spec.Port {
+		t.Fatalf("port changed on target edit: %d -> %d", before.Spec.Port, upd.Spec.Port)
+	}
+
+	op2, err := s.Apply(got.Spec.ID, "reinstall")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done := waitOp(t, s, got.Spec.ID, op2); done.Status != state.OpSucceeded {
+		t.Fatalf("reinstall operation = %+v", done)
+	}
+	after, _ := s.Get(got.Spec.ID)
+	if after.Runtime.State != state.StateRunning || after.Runtime.NeedsReapply {
+		t.Fatalf("runtime after reinstall = %+v", after.Runtime)
+	}
+	appTgz := readFPKMember(t, after.Runtime.PackagePath, "app.tgz")
+	cfg := string(readAppTgzMember(t, appTgz, "config.json"))
+	if !strings.Contains(cfg, "192.168.123.200:8021") {
+		t.Fatalf("config.json did not pick up the new target: %s", cfg)
+	}
+	if strings.Contains(cfg, "192.168.1.10") {
+		t.Fatalf("config.json still contains the old target: %s", cfg)
+	}
+}
+
 func TestCreateHashesPasswordAndNeverReturnsIt(t *testing.T) {
 	s, _ := newTestService(t)
 	in := input()
