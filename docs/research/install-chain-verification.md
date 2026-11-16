@@ -233,7 +233,10 @@ appcenter-cli list 2>&1 | grep verify.probe || true
 - `status verify.probe`：输出 `starting`，退出码 0（同样实际接受 appname）。
 - `start verify.probe`：输出 `[Error]Something wrong with appcenter: code 10500`、`[Error]Failed to launch app. error code 10500..`，但**退出码 0**。
 - `stop verify.probe`：同样报 10500，**退出码 0**；状态仍是 `starting`。
-- 结论（暂定）：本地安装链路可用；但 CLI 的 start/stop 失败不会体现在退出码上，T2 不能只看 exit code。应用卡在 starting，需查 `cmd/main` 是否执行、服务端口 28999 是否监听、appcenter 日志里的 10500 含义。
+- 11:47:27 复查：`list`/`status` 已变成 `running`；进程为 `verify.+ 421125 1 S sleep 600`；`/vol1/@appdata/verify.probe/info.log` 只有 `2026-11-16 11:43:55 - Starting process ...`；28999 没有监听。
+- 因此 10500 是“应用还在 starting 状态”时 start/stop 的拒绝，不是安装失败；安装后到 running 之间有明显延迟（本例约 3.5 分钟）。T2 必须轮询 `status`，不能 install 完立刻 start/stop，也不能只看 exit code。
+- 部署目录 `/vol1/@appcenter/verify.probe` 只有 config/server/ui/www，没有 cmd/main；cmd 脚本由 appcenter 安装时消费，不落在部署目录。目录与 appdata 都归 `verify.probe:verify.probe`。
+- 结论（暂定）：本地安装链路可用；start/stop 的退出码不可靠，状态迁移要按 status 轮询。待 running 状态下复测 stop/start。
 
 ## 结果与结论
 
