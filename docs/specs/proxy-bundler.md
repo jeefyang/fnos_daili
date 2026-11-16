@@ -336,7 +336,7 @@ checksum=<md5(app.tgz)>
 ```
 
 - `ctl_stop=true`：托管台是没有 `service_port` 的守护型应用，应用中心据此提供启停并调用 `cmd/main`。
-- `cmd/install_callback` 写完 `ui/index.cgi` 后再执行一次 `cmd/main start`；与 appcenter 自己的启动重复时由 `cmd/main` 的 pid/socket 检查兜住。
+- `cmd/install_callback` 只写 `ui/index.cgi`；shim 在每次请求时检查 `manager.sock`，不存在就 `nohup manager --mode serve` 拉起守护进程，再 exec `--mode cgi`。这样即使 appcenter 没有自动 start，第一次打开界面也能用；`manager serve` 发现 socket 已有活进程时直接退出 0，不产生第二实例。
 - 不写 `service_port`、`install_type`、`arch`。
 - `platform` 由构建目标决定：amd64→`x86`，arm64→`arm`。v1 只发 x86 包；ARM 构建同流程另编。
 

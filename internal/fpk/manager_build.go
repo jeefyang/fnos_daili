@@ -95,7 +95,7 @@ set -u
 APP="%s"
 DESK="${TRIM_APPDEST:-/tmp/$APP}"
 VAR="${TRIM_PKGVAR:-/tmp/$APP-var}"
-PID="$VAR/$APP.pid"
+PID="$VAR/manager.pid"
 SOCK="$VAR/manager.sock"
 LOG="$VAR/manager.log"
 
@@ -107,8 +107,6 @@ start() {
   fi
   rm -f "$SOCK" "$PID"
   nohup "$DESK/bin/manager" --mode serve --socket "$SOCK" >>"$LOG" 2>&1 &
-  echo $! >"$PID"
-  chmod 600 "$PID"
   for _ in $(seq 1 50); do
     [ -S "$SOCK" ] && exit 0
     sleep 0.1
@@ -131,7 +129,11 @@ stop() {
 }
 
 status() {
-  if [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null && [ -S "$SOCK" ]; then
+  if [ -S "$SOCK" ]; then
+    if [ -f "$PID" ] && ! kill -0 "$(cat "$PID")" 2>/dev/null; then
+      rm -f "$PID"
+      exit 3
+    fi
     exit 0
   fi
   exit 3
@@ -154,14 +156,21 @@ VAR="${TRIM_PKGVAR:?}"
 mkdir -p "$DESK/ui" "$VAR"
 cat >"$DESK/ui/index.cgi" <<'CGI'
 #!/bin/bash
-exec "${TRIM_APPDEST}/bin/manager" --mode cgi --socket "${TRIM_PKGVAR}/manager.sock"
+set -u
+DESK="${TRIM_APPDEST:?}"
+VAR="${TRIM_PKGVAR:?}"
+SOCK="$VAR/manager.sock"
+if [ ! -S "$SOCK" ]; then
+  mkdir -p "$VAR"
+  nohup "$DESK/bin/manager" --mode serve --socket "$SOCK" >>"$VAR/manager.log" 2>&1 &
+  for _ in $(seq 1 50); do
+    [ -S "$SOCK" ] && break
+    sleep 0.1
+  done
+fi
+exec "$DESK/bin/manager" --mode cgi --socket "$SOCK"
 CGI
 chmod 755 "$DESK/ui/index.cgi"
-# The manager has no service_port, so appcenter may not start it automatically.
-# Start it here as well; cmd/main is idempotent (pid + socket check).
-if [ -x "$DESK/cmd/main" ]; then
-  "$DESK/cmd/main" start >/dev/null 2>&1 || true
-fi
 exit 0
 `
 }

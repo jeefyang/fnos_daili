@@ -12,6 +12,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -71,8 +73,13 @@ func runServe(socket string, logger *log.Logger) error {
 	if err != nil {
 		return err
 	}
-	if err := prepareSocket(socket); err != nil {
+	running, err := prepareSocket(socket)
+	if err != nil {
 		return err
+	}
+	if running {
+		logger.Printf("manager already running socket=%s", socket)
+		return nil
 	}
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
@@ -82,6 +89,16 @@ func runServe(socket string, logger *log.Logger) error {
 	if err := os.Chmod(socket, 0o600); err != nil {
 		return err
 	}
+	pidPath := filepath.Join(varDir, "manager.pid")
+	pid := strconv.Itoa(os.Getpid())
+	if err := os.WriteFile(pidPath, []byte(pid), 0o600); err != nil {
+		return err
+	}
+	defer func() {
+		if b, err := os.ReadFile(pidPath); err == nil && strings.TrimSpace(string(b)) == pid {
+			_ = os.Remove(pidPath)
+		}
+	}()
 	ui := manager.UI()
 	handler := svc.Handler(http.FileServer(http.FS(ui)))
 	server := &http.Server{
@@ -118,17 +135,19 @@ func runCGI(socket string, logger *log.Logger) error {
 	return cgi.Serve(handler)
 }
 
-func prepareSocket(path string) error {
+// prepareSocket returns true when a live manager already owns the socket. A
+// dead socket is removed so this process can bind it.
+func prepareSocket(path string) (bool, error) {
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return false, nil
 		}
-		return err
+		return false, err
 	}
 	conn, err := net.DialTimeout("unix", path, 500*time.Millisecond)
 	if err == nil {
 		_ = conn.Close()
-		return fmt.Errorf("socket %s is already in use", path)
+		return true, nil
 	}
-	return os.Remove(path)
+	return false, os.Remove(path)
 }
