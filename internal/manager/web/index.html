@@ -21,16 +21,13 @@
     </div>
     <div class="top-actions">
       <span id="cliPill" class="pill neutral"><span class="dot"></span><span id="cliText">检查环境…</span></span>
+      <button id="settingsBtn" class="btn" type="button">设置</button>
       <button id="newBtn" class="btn primary">新建代理</button>
     </div>
   </header>
 
-  <nav class="tabs" aria-label="视图">
-    <button id="tabList" class="tab active" type="button">应用</button>
-    <button id="tabWizard" class="tab" type="button">新建 / 编辑</button>
-  </nav>
-
   <section id="listView">
+    <div id="netBanner" class="net-banner" style="display:none"></div>
     <div class="panel">
       <div class="panel-head">
         <div>
@@ -45,6 +42,13 @@
   </section>
 
   <section id="wizardView" style="display:none">
+    <div class="wizard-head">
+      <button id="wizardBackBtn" class="btn sm ghost" type="button">← 返回列表</button>
+      <div>
+        <h2 id="wizardTitle">新建代理</h2>
+        <p id="wizardSub">填一个 ip:port，生成并安装一个独立的代理应用。</p>
+      </div>
+    </div>
     <div class="panel wizard">
       <aside class="steps" id="stepRail">
         <div class="step active" data-step="1"><span class="num">1</span><div><div class="label">目标</div><div class="hint">要代理的地址</div></div></div>
@@ -83,7 +87,7 @@
                 <input id="appname" class="input mono" maxlength="32" placeholder="proxy.home.9f3a" autocomplete="off" spellcheck="false">
                 <button id="checkNameBtn" class="btn" type="button">检查</button>
               </div>
-              <div id="appnameMsg" class="help">3–32 位，字母或数字开头，可用 . _ -。</div>
+              <div id="appnameMsg" class="help">3–32 位，字母或数字开头，可用 . _ -；前缀/后缀可在右上角“设置”里统一配置。</div>
             </div>
           </div>
           <div class="field">

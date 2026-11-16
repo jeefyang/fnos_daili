@@ -451,7 +451,77 @@ func viewOf(t state.Target) TargetView {
 	return TargetView{Spec: sp, Runtime: t.Runtime}
 }
 
-// AppNameCheck validates an appname against state and the installed list.
+// Settings returns manager-wide defaults for newly suggested appnames.
+func (s *Service) Settings() state.Settings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.st.Settings == nil {
+		return *state.DefaultSettings()
+	}
+	return *s.st.Settings
+}
+
+// SaveSettings validates and persists appname affixes. It never rewrites an
+// existing target: those appnames are already locked.
+func (s *Service) SaveSettings(in state.Settings) (state.Settings, error) {
+	out, err := normalizeSettings(in)
+	if err != nil {
+		return state.Settings{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.st.Settings = &out
+	if err := s.saveLocked(); err != nil {
+		return state.Settings{}, err
+	}
+	return out, nil
+}
+
+func normalizeSettings(in state.Settings) (state.Settings, error) {
+	prefix := strings.TrimSpace(in.AppNamePrefix)
+	suffix := strings.TrimSpace(in.AppNameSuffix)
+	if prefix != in.AppNamePrefix || suffix != in.AppNameSuffix {
+		return state.Settings{}, &spec.Error{Field: "settings", Message: "prefix/suffix must not have leading or trailing whitespace"}
+	}
+	if err := checkAppNameAffix("appname_prefix", prefix, true); err != nil {
+		return state.Settings{}, err
+	}
+	if err := checkAppNameAffix("appname_suffix", suffix, false); err != nil {
+		return state.Settings{}, err
+	}
+	if len(prefix)+len(suffix) > 24 {
+		return state.Settings{}, &spec.Error{Field: "settings", Message: "prefix and suffix may use at most 24 bytes together"}
+	}
+	if err := spec.ValidateAppName(prefix + "app" + suffix); err != nil {
+		return state.Settings{}, &spec.Error{Field: "settings", Message: "prefix and suffix do not form a valid appname: " + err.Error()}
+	}
+	return state.Settings{AppNamePrefix: prefix, AppNameSuffix: suffix}, nil
+}
+
+func checkAppNameAffix(field, value string, firstMustBeAlnum bool) error {
+	if len(value) > 16 {
+		return &spec.Error{Field: field, Message: "must be at most 16 bytes"}
+	}
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if !isAffixByte(c) {
+			return &spec.Error{Field: field, Message: "only ASCII letters, digits, dot, underscore and hyphen are allowed"}
+		}
+	}
+	if firstMustBeAlnum && value != "" && !isAffixAlnum(value[0]) {
+		return &spec.Error{Field: field, Message: "must start with a letter or digit"}
+	}
+	return nil
+}
+
+func isAffixAlnum(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+}
+
+func isAffixByte(c byte) bool {
+	return isAffixAlnum(c) || c == '.' || c == '_' || c == '-'
+}
+
 func (s *Service) AppNameCheck(ctx context.Context, name string) (bool, string) {
 	if err := spec.ValidateAppName(name); err != nil {
 		return false, err.Error()

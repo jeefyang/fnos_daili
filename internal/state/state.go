@@ -68,14 +68,28 @@ type Target struct {
 	Runtime Runtime        `json:"runtime"`
 }
 
-// State is the on-disk state.json document.
-type State struct {
-	Schema  int      `json:"schema"`
-	Targets []Target `json:"targets"`
+// Settings are manager-wide defaults for newly suggested appnames. They do
+// not rename existing targets; appname stays immutable once created.
+type Settings struct {
+	AppNamePrefix string `json:"appname_prefix"`
+	AppNameSuffix string `json:"appname_suffix"`
 }
 
-// New returns an empty state with the current schema.
-func New() State { return State{Schema: Schema} }
+// DefaultSettings returns the initial appname affixes. The prefix keeps the
+// historical "proxy." look; the suffix is intentionally empty.
+func DefaultSettings() *Settings {
+	return &Settings{AppNamePrefix: "proxy."}
+}
+
+// State is the on-disk state.json document.
+type State struct {
+	Schema   int       `json:"schema"`
+	Targets  []Target  `json:"targets"`
+	Settings *Settings `json:"settings,omitempty"`
+}
+
+// New returns an empty state with the current schema and defaults.
+func New() State { return State{Schema: Schema, Settings: DefaultSettings()} }
 
 // Store reads and atomically writes state.json.
 type Store struct {
@@ -105,6 +119,9 @@ func (s Store) Load() (State, string, error) {
 	if st.Targets == nil {
 		st.Targets = []Target{}
 	}
+	if st.Settings == nil {
+		st.Settings = DefaultSettings()
+	}
 	return st, "", nil
 }
 
@@ -115,6 +132,9 @@ func (s Store) Save(st State) error {
 	}
 	if st.Targets == nil {
 		st.Targets = []Target{}
+	}
+	if st.Settings == nil {
+		st.Settings = DefaultSettings()
 	}
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {

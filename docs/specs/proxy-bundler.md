@@ -657,9 +657,14 @@ esac
 | POST | `/api/targets/{id}/test-target` | 测试连通性；不阻断保存 |
 | GET | `/api/appnames/check?appname=` | `{ok, reason}`；查 state + list |
 | GET | `/api/volumes` | `appcenter-cli default-volume` + 常见卷 |
+| GET | `/api/settings` | 全局设置 `{appname_prefix, appname_suffix}` |
+| PUT | `/api/settings` | 校验并保存全局前缀/后缀；不改已创建 target |
+| GET | `/api/network` | `{client_ip, lan, known}`；`lan` 未知时为 null |
 | GET | `/api/operations/{id}` | 异步操作进度 |
 
-- `apply`/`delete`/`rollback` 立即返回 `202 {operation_id}`；进度写 state 的 `last_operation`，前端轮询。
+- `apply`/`delete`/`rollback` 立即返回 `202 {operation_id}`；进度写 state 的 `last_operation`，前端轮询直到终态再刷新列表。
+- `settings` 的 prefix/suffix 各 ≤16 字节、合计 ≤24，只允许 ASCII 字母数字 `._-`；prefix 非空时首字符必须是字母或数字；用 `prefix+"app"+suffix` 过一遍 appname 校验。保存只影响新建时建议，已创建的 appname 已锁定。
+- `network` 从 `X-Daili-Client-IP`（CGI shim 写入）→ `X-Forwarded-For` → `X-Real-IP` → `RemoteAddr` 取第一个合法 IP；私网/回环/链路本地为 `lan=true`，公网为 `false`，取不到为 null。仅用于入口提示，不参与鉴权。
 - `test-target` 用同一目标拦截；返回 `{reachable, status, elapsed_ms, error}`；错误只给类别。
 - `appnames/check` 规则：正则、保留名、state 冲突、`appcenter-cli list` 冲突。
 - 下载包只允许 state 里记录的路径，防目录穿越。
@@ -746,9 +751,9 @@ T2 的“端口 bind 预检”恢复：代理入口使用独立端口，分配�
 ### 10.1 四步向导
 
 1. **目标**：target_url 输入；test-target 按钮（非阻断）；格式错误才禁用下一步；反代模式显示“目标拦截”提示。
-2. **应用信息**：display_name、appname（预填 `proxy.<slug>.<4hex>`，可改，异步 check）、description、version（高级折叠，默认 1.0.0）。
+2. **应用信息**：display_name、appname（预填 `全局前缀 + slug + 全局后缀 + "." + 4hex`，默认前缀 `proxy.`；可改，异步 check）、description、version（高级折叠，默认 1.0.0）。新建与编辑用同一个向导，但入口分开：新建从空白开始，编辑回填已有 target 并锁定 appname；不再有“新建/编辑”页签。
 3. **入口与高级**：mode（reverse/direct）、ui_type（url/iframe）、all_users（默认 false）、no_display、entry_title、install_volume、skip_tls_verify（仅 https+reverse）、allow_loopback（仅 reverse）、Basic Auth（开关 + 用户名/密码，仅 reverse）；端口只读展示（新建时“生成时自动分配”，编辑时显示已分配端口）。
-4. **确认与生成**：摘要含入口端口与最终 URL；生成按钮；进度 5 步（校验 → 生成包 → 安装 → 启动 → 完成）；失败停在对应步骤，提供下载 fpk、查看日志、重试；成功后给入口链接。
+4. **确认与生成**：摘要含入口端口与最终 URL；生成按钮；进度 5 步（校验 → 生成包 → 安装 → 启动 → 完成）；失败停在对应步骤，提供下载 fpk、查看日志、重试；成功后 toast 提示并自动回到列表。
 
 ### 10.2 列表
 
@@ -756,6 +761,9 @@ T2 的“端口 bind 预检”恢复：代理入口使用独立端口，分配�
 
 - 编辑：appname 锁定；保存后若已安装，提示“将重新生成并重装”；可“另存为新应用”（新 appname）。
 - 删除：二次确认，输入 appname 才可提交；卸载失败展示原因与重试。
+- 删除、回滚提交后轮询操作到终态，再自动刷新列表；不要求用户切换视图。
+- 安装成功自动回列表；列表入口 `http://<host>:<port>/` 可直接点击打开。
+- `/api/network` 判定为外网时，列表顶部显示提示，入口旁标“外网访问，端口通常不可达”；点击入口先弹提示，提供“复制地址”和“仍然尝试”，不直接打开。
 - 不做实时健康检查；提供刷新。
 - 空状态给“新建代理应用”按钮。
 - 所有错误用统一 toast + 字段级错误；不显示上游/堆栈。

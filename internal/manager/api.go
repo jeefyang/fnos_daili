@@ -43,6 +43,9 @@ func (s *Service) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/test-target", s.handleTestTarget)
 	mux.HandleFunc("GET /api/appnames/check", s.handleAppNameCheck)
 	mux.HandleFunc("GET /api/volumes", s.handleVolumes)
+	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
+	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
+	mux.HandleFunc("GET /api/network", s.handleNetwork)
 	mux.HandleFunc("GET /api/operations/{id}", s.handleOperation)
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /index.html", s.handleIndex)
@@ -436,6 +439,75 @@ func (s *Service) handleVolumes(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	def, list := s.VolumeInfo(ctx)
 	writeJSON(w, http.StatusOK, map[string]any{"default": def, "volumes": list})
+}
+
+func (s *Service) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.Settings())
+}
+
+func (s *Service) handlePutSettings(w http.ResponseWriter, r *http.Request) {
+	var in state.Settings
+	if err := decodeJSON(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	out, err := s.SaveSettings(in)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleNetwork reports what the server can tell about the browser's network.
+// The manager is reached through the fnOS CGI proxy, which stamps
+// X-Daili-Client-IP from the TCP peer. A public client IP means the proxy's
+// independent TCP port is normally not reachable from that browser.
+func (s *Service) handleNetwork(w http.ResponseWriter, r *http.Request) {
+	ip := clientIPFromRequest(r)
+	var lan any
+	if ip != nil {
+		lan = ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast()
+	}
+	client := ""
+	if ip != nil {
+		client = ip.String()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"client_ip": client,
+		"lan":       lan,
+		"known":     ip != nil,
+	})
+}
+
+func clientIPFromRequest(r *http.Request) net.IP {
+	candidates := []string{
+		r.Header.Get("X-Daili-Client-IP"),
+		r.Header.Get("X-Forwarded-For"),
+		r.Header.Get("X-Real-IP"),
+		r.RemoteAddr,
+	}
+	for _, candidate := range candidates {
+		if ip := parseClientIP(candidate); ip != nil {
+			return ip
+		}
+	}
+	return nil
+}
+
+func parseClientIP(raw string) net.IP {
+	raw = strings.TrimSpace(strings.Split(raw, ",")[0])
+	if raw == "" {
+		return nil
+	}
+	if host, _, err := net.SplitHostPort(raw); err == nil {
+		raw = host
+	}
+	raw = strings.Trim(raw, "[]")
+	if i := strings.IndexByte(raw, '%'); i >= 0 {
+		raw = raw[:i]
+	}
+	return net.ParseIP(raw)
 }
 
 func decodeJSON(r *http.Request, out any) error {

@@ -20,6 +20,44 @@ func sampleState() State {
 	return st
 }
 
+func TestNewHasDefaultSettings(t *testing.T) {
+	st := New()
+	if st.Settings == nil || st.Settings.AppNamePrefix != "proxy." || st.Settings.AppNameSuffix != "" {
+		t.Fatalf("settings = %+v", st.Settings)
+	}
+}
+
+func TestLoadMissingSettingsUsesDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	if err := os.WriteFile(path, []byte(`{"schema":1,"targets":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, _, err := Store{Path: path}.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Settings == nil || st.Settings.AppNamePrefix != "proxy." {
+		t.Fatalf("settings = %+v", st.Settings)
+	}
+}
+
+func TestSettingsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	st := New()
+	st.Settings = &Settings{AppNamePrefix: "daili.", AppNameSuffix: ".prod"}
+	if err := (Store{Path: path}).Save(st); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := (Store{Path: path}).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Settings == nil || got.Settings.AppNamePrefix != "daili." || got.Settings.AppNameSuffix != ".prod" {
+		t.Fatalf("settings = %+v", got.Settings)
+	}
+}
+
 func TestLoadMissingIsEmpty(t *testing.T) {
 	s := Store{Path: filepath.Join(t.TempDir(), "state.json")}
 	st, warning, err := s.Load()

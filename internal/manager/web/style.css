@@ -59,9 +59,12 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monosp
 .pill.neutral { color: var(--muted); background: #eef2f7; }
 .pill.info { color: var(--info); background: var(--brand-soft); }
 
-.tabs { display: flex; gap: 4px; padding: 4px; background: #e9eef7; border-radius: 12px; width: max-content; margin-bottom: 20px; }
-.tab { border: 0; background: transparent; padding: 8px 18px; border-radius: 9px; color: var(--muted); font-weight: 600; }
-.tab.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(15, 23, 42, .12); }
+.net-banner { margin-bottom: 14px; padding: 11px 14px; border-radius: 11px; border: 1px solid #f0d58a; background: var(--warn-soft); color: #7a4d05; font-size: 13px; }
+.wizard-head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+.wizard-head .btn { flex: 0 0 auto; }
+.wizard-head h2 { margin: 0; font-size: 19px; letter-spacing: -.01em; }
+.wizard-head p { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
+.entry-link { color: var(--brand-2); }
 
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
 .panel-pad { padding: 22px; }
@@ -157,6 +160,7 @@ tbody tr:hover { background: #fbfdff; }
 .alert.err { background: var(--bad-soft); color: #7a1a13; border: 1px solid #f1c7c3; }
 .alert.ok { background: var(--ok-soft); color: #0b4f49; border: 1px solid #b6e5dd; }
 .alert.info { background: var(--brand-soft); color: #1e3a8a; border: 1px solid #c7d7ff; }
+.alert.warn { background: var(--warn-soft); color: #7a4d05; border: 1px solid #f0d58a; }
 
 .modal-back { position: fixed; inset: 0; background: rgba(15, 23, 42, .45); display: grid; place-items: center; padding: 24px; z-index: 50; }
 .modal { background: var(--surface); border-radius: 15px; width: min(720px, 100%); max-height: 86vh; overflow: auto; box-shadow: 0 24px 64px rgba(15, 23, 42, .25); }

@@ -6,6 +6,7 @@
     tab: 'list',
     step: 1,
     editId: null,
+    originalAppname: '',
     appnameTouched: false,
     mode: 'reverse',
     volumesLoaded: false,
@@ -13,7 +14,10 @@
     lastPackage: null,
     lastOpAppName: '',
     lastOpPort: 0,
-    editPort: 0
+    editPort: 0,
+    editVolume: '',
+    settings: { appname_prefix: 'proxy.', appname_suffix: '' },
+    network: { known: false, lan: null, client_ip: '' }
   };
 
   function $(id) { return document.getElementById(id); }
@@ -52,6 +56,90 @@
         return data;
       });
     });
+  }
+
+  function waitOperation(opId) {
+    return new Promise(function (resolve, reject) {
+      var started = Date.now();
+      var tick = function () {
+        api('/api/operations/' + encodeURIComponent(opId)).then(function (op) {
+          if (op.status === 'running') {
+            if (Date.now() - started > 10 * 60 * 1000) {
+              reject(new Error('操作超时，请到列表查看状态'));
+              return;
+            }
+            setTimeout(tick, 1000);
+            return;
+          }
+          resolve(op);
+        }).catch(reject);
+      };
+      tick();
+    });
+  }
+
+  function loadSettings() {
+    return api('/api/settings').then(function (s) {
+      if (s && typeof s.appname_prefix === 'string') {
+        state.settings.appname_prefix = s.appname_prefix;
+        state.settings.appname_suffix = s.appname_suffix || '';
+      }
+    }).catch(function () {});
+  }
+
+  function loadNetwork() {
+    return api('/api/network').then(function (n) {
+      state.network = n || { known: false, lan: null };
+      if (window.__lastList) renderList(window.__lastList);
+      renderNetBanner();
+    }).catch(function () {});
+  }
+
+  function renderNetBanner() {
+    var b = $('netBanner');
+    if (!b) return;
+    if (state.network && state.network.lan === false) {
+      b.style.display = '';
+      b.textContent = '当前看起来是通过外网访问。列表里的入口使用飞牛所在局域网的独立端口，通常没有映射到公网，直接打开可能打不开。';
+    } else {
+      b.style.display = 'none';
+      b.textContent = '';
+    }
+  }
+
+  function copyText(text) {
+    var done = function () { toast('已复制入口地址'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text, done); });
+    } else {
+      fallbackCopy(text, done);
+    }
+  }
+
+  function fallbackCopy(text, done) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { window.prompt('复制入口地址', text); }
+    ta.remove();
+  }
+
+  function openEntry(url) {
+    if (!url) return;
+    if (state.network && state.network.lan === false) {
+      openModal('外网访问提示',
+        '<div class="alert warn">当前看起来是通过外网访问。这个入口是飞牛所在局域网的独立端口，通常没有映射到公网，直接打开多半不可达。</div>' +
+        '<div class="field" style="margin-top:12px"><label>入口地址</label><div class="mono" style="word-break:break-all">' + esc(url) + '</div></div>',
+        [
+          { label: '复制地址', onClick: function () { copyText(url); } },
+          { label: '仍然尝试', cls: 'primary', onClick: function (close) { close(); window.open(url, '_blank', 'noopener'); } }
+        ]);
+      return;
+    }
+    window.open(url, '_blank', 'noopener');
   }
 
   function toast(text, isErr) {
@@ -122,6 +210,7 @@
 
   function loadList() {
     return api('/api/targets').then(function (data) {
+      window.__lastList = data;
       renderList(data);
     }).catch(function (e) {
       $('listBody').innerHTML = '<div class="empty"><div class="big">加载失败</div><div>' + esc(msgOf(e)) + '</div></div>';
@@ -129,6 +218,7 @@
   }
 
   function renderList(data) {
+    window.__lastList = data;
     var targets = data.targets || [];
     if (!targets.length) {
       $('listBody').innerHTML = '<div class="empty"><div class="big">还没有代理应用</div><div>点击右上角“新建代理”，填一个 ip:port 就能生成安装包。</div><div style="margin-top:16px"><button class="btn primary" id="emptyNew" type="button">新建第一个代理</button></div></div>';
@@ -149,9 +239,14 @@
           opText = '—';
         }
         var url = entryURL(sp.appname, sp.port);
+        var lanBlocked = state.network && state.network.lan === false;
+        var entryHtml = url
+          ? '<a class="mono entry-link" style="font-size:11.5px" href="' + esc(url) + '" data-entry="1" data-url="' + esc(url) + '" target="_blank" rel="noopener">:' + esc(sp.port) + '/</a>'
+          : '<span class="faint">未分配</span>';
+        if (url && lanBlocked) entryHtml += '<div class="faint" style="font-size:11px;margin-top:3px">外网访问，端口通常不可达</div>';
         var actions = [];
         if (rt.state === 'running' || rt.state === 'installed_not_running') {
-          actions.push('<button class="btn sm" data-act="open" data-id="' + esc(sp.id) + '" type="button">打开</button>');
+          actions.push('<button class="btn sm" data-act="open" data-id="' + esc(sp.id) + '" data-url="' + esc(url) + '" type="button">打开</button>');
         }
         actions.push('<button class="btn sm" data-act="edit" data-id="' + esc(sp.id) + '" type="button">编辑</button>');
         actions.push('<button class="btn sm" data-act="apply" data-id="' + esc(sp.id) + '" type="button">' + (rt.state === 'draft' ? '安装' : '重新应用') + '</button>');
@@ -163,7 +258,7 @@
           '<td class="app-cell"><div class="name">' + esc(sp.display_name) + '</div><div class="id mono">' + esc(sp.appname) + '</div></td>' +
           '<td class="target-cell"><div class="mono">' + esc(sp.target_url) + '</div><div class="faint">' + (sp.mode === 'direct' ? '直连 302' : '反向代理') + '</div></td>' +
           '<td><span class="pill ' + st.cls + '"><span class="dot"></span>' + st.text + '</span>' + (rt.needs_reapply ? '<div class="faint" style="font-size:11px;margin-top:3px">待重新应用</div>' : '') + '</td>' +
-          '<td class="nowrap">' + (url ? '<a class="mono" style="font-size:11.5px" href="' + esc(url) + '" target="_blank" rel="noopener">:' + esc(sp.port) + '/</a>' : '<span class="faint">未分配</span>') + '</td>' +
+          '<td class="nowrap">' + entryHtml + '</td>' +
           '<td class="muted" style="font-size:12px;max-width:230px">' + esc(opText) + '</td>' +
           '<td><div class="row-actions">' + actions.join('') + '</div></td>' +
           '</tr>';
@@ -199,13 +294,19 @@
   }
 
   function onListClick(e) {
+    var link = e.target.closest('a[data-entry]');
+    if (link) {
+      e.preventDefault();
+      openEntry(link.getAttribute('data-url'));
+      return;
+    }
     var btn = e.target.closest('button[data-act]');
     if (!btn) return;
     var id = btn.getAttribute('data-id');
     var act = btn.getAttribute('data-act');
     if (act === 'open') {
       var t = findTarget(id);
-      if (t) window.open(entryURL(t.spec.appname, t.spec.port), '_blank', 'noopener');
+      openEntry(btn.getAttribute('data-url') || (t ? entryURL(t.spec.appname, t.spec.port) : ''));
     } else if (act === 'edit') {
       var t2 = findTarget(id);
       if (t2) startEdit(t2);
@@ -214,11 +315,21 @@
       applyTarget(id, '');
     } else if (act === 'rollback') {
       if (!confirm('用上一版安装包重装，继续？')) return;
-      postOp('/api/targets/' + id + '/rollback').catch(function (err) { toast(msgOf(err), true); });
+      postOp('/api/targets/' + id + '/rollback').then(function (r) {
+        return waitOperation(r.operation_id);
+      }).then(function (op) {
+        if (op && op.status === 'failed') toast('回滚失败：' + (op.error || '未知错误'), true);
+        else toast('回滚完成');
+        return loadListCached();
+      }).catch(function (err) { toast(msgOf(err), true); });
     } else if (act === 'delete') {
       if (!confirm('卸载应用并删除托管记录？安装包也会删除。')) return;
-      postOp('/api/targets/' + id + '/delete').then(function () {
-        setTimeout(function () { loadListCached(); }, 800);
+      postOp('/api/targets/' + id + '/delete').then(function (r) {
+        return waitOperation(r.operation_id);
+      }).then(function (op) {
+        if (op && op.status === 'failed') toast('删除失败：' + (op.error || '未知错误'), true);
+        else toast('已删除');
+        return loadListCached();
       }).catch(function (err) { toast(msgOf(err), true); });
     } else if (act === 'log') {
       showLog(id);
@@ -233,8 +344,9 @@
   }
 
   function applyTarget(id, kind) {
-    state.editId = id;
     var t = findTarget(id);
+    if (t && state.tab !== 'wizard') fillForm(t);
+    state.editId = id;
     if (t) { state.lastOpAppName = t.spec.appname; state.lastOpPort = t.spec.port; }
     api('/api/targets/' + id + '/apply', { method: 'POST', body: { kind: kind || '' } }).then(function (r) {
       switchTab('wizard');
@@ -261,29 +373,31 @@
     root.querySelector('.modal-back').addEventListener('click', function (e) { if (e.target === this) closeModal(); });
     (buttons || []).forEach(function (b, i) {
       var el = root.querySelector('[data-mi="' + i + '"]');
-      if (el) el.addEventListener('click', function () { b.onClick(closeModal); });
+      if (el) el.addEventListener('click', function () { (b.onClick || function (close) { close(); })(closeModal); });
     });
   }
   function closeModal() { $('modalRoot').innerHTML = ''; }
 
   function switchTab(name) {
     state.tab = name;
-    $('tabList').classList.toggle('active', name === 'list');
-    $('tabWizard').classList.toggle('active', name === 'wizard');
     $('listView').style.display = name === 'list' ? '' : 'none';
     $('wizardView').style.display = name === 'wizard' ? '' : 'none';
+    if (name === 'list') renderNetBanner();
   }
 
   function resetForm() {
     state.editId = null;
+    state.originalAppname = '';
     state.appnameTouched = false;
     state.mode = 'reverse';
     state.lastPackage = null;
     state.editPort = 0;
+    state.editVolume = '';
     $('target_url').value = '';
     $('display_name').value = '';
     $('appname').value = '';
     $('appname').disabled = false;
+    if (state.volumesLoaded && $('install_volume').options.length) $('install_volume').selectedIndex = 0;
     $('description').value = '';
     $('version').value = '1.0.0';
     $('entry_title').value = '';
@@ -308,15 +422,28 @@
 
   function startNew() {
     switchTab('wizard');
+    $('wizardTitle').textContent = '新建代理';
+    $('wizardSub').textContent = '填一个 ip:port，生成并安装一个独立的代理应用。';
     resetForm();
   }
 
   function startEdit(t) {
     switchTab('wizard');
+    $('wizardTitle').textContent = '编辑代理';
+    $('wizardSub').textContent = '修改会重新生成安装包并重装；应用标识首次安装后不可更改。';
+    fillForm(t);
+  }
+
+  function fillForm(t) {
     resetForm();
+    if (!t) return;
     state.editId = t.spec.id;
+    state.originalAppname = t.spec.appname;
     state.editPort = t.spec.port || 0;
+    state.editVolume = t.spec.install_volume || '1';
     state.appnameTouched = true;
+    state.lastOpAppName = t.spec.appname;
+    state.lastOpPort = t.spec.port || 0;
     $('target_url').value = t.spec.target_url;
     $('display_name').value = t.spec.display_name;
     $('appname').value = t.spec.appname;
@@ -374,14 +501,16 @@
   function loadVolumes() {
     api('/api/volumes').then(function (d) {
       var sel = $('install_volume');
+      var list = d.volumes || [d.default || '1'];
+      var want = state.editVolume || sel.value;
       sel.innerHTML = '';
-      (d.volumes || [d.default || '1']).forEach(function (v) {
+      list.forEach(function (v) {
         var o = document.createElement('option');
         o.value = v;
         o.textContent = '卷 ' + v + (v === d.default ? '（默认）' : '');
         sel.appendChild(o);
       });
-      sel.value = d.default || '1';
+      sel.value = (want && list.indexOf(String(want)) >= 0) ? String(want) : (d.default || '1');
       state.volumesLoaded = true;
     }).catch(function () {});
   }
@@ -398,9 +527,19 @@
 
   function suggestAppName() {
     if (state.appnameTouched || state.editId) return;
-    var base = slugify($('display_name').value);
-    var name = base ? 'proxy.' + base : 'proxy';
-    $('appname').value = name.slice(0, 26) + '.' + randHex4();
+    var base = slugify($('display_name').value) || 'app';
+    var prefix = typeof state.settings.appname_prefix === 'string' ? state.settings.appname_prefix : 'proxy.';
+    var suffix = typeof state.settings.appname_suffix === 'string' ? state.settings.appname_suffix : '';
+    var room = 27 - prefix.length - suffix.length;
+    if (room < 1) {
+      prefix = 'proxy.';
+      suffix = '';
+      room = 21;
+    }
+    base = base.slice(0, room);
+    var name = prefix + base + suffix;
+    if (!validAppName(name)) name = prefix + 'app' + suffix;
+    $('appname').value = name.slice(0, 27) + '.' + randHex4();
   }
 
   function targetError() {
@@ -443,6 +582,11 @@
       box.className = 'error';
       box.textContent = '3–32 位，字母或数字开头，可用 . _ -。';
       return Promise.resolve(false);
+    }
+    if (state.editId && name === state.originalAppname) {
+      box.className = 'help';
+      box.textContent = '当前应用标识，首次安装后不可更改。';
+      return Promise.resolve(true);
     }
     box.className = 'help';
     box.textContent = '检查中…';
@@ -605,14 +749,8 @@
         $('nextBtn').disabled = false;
         if (op.status === 'succeeded') {
           $('applyAlert').innerHTML = '<div class="alert ok">安装完成，应用已进入运行状态。</div>';
-          var links = '<a class="btn primary sm" target="_blank" rel="noopener" href="' + esc(entryURL(state.lastOpAppName || $('appname').value, state.lastOpPort)) + '">打开入口</a>';
-          if (state.editId) {
-            links += ' <a class="btn sm" href="' + apiURL('/api/targets/' + encodeURIComponent(state.editId) + '/package') + '">下载 fpk</a>';
-            links += ' <button class="btn sm" type="button" id="backList">返回列表</button>';
-          }
-          $('applyLinks').innerHTML = links;
-          var bl = $('backList');
-          if (bl) bl.addEventListener('click', function () { switchTab('list'); loadListCached(); });
+          toast('安装完成，应用已进入运行状态');
+          switchTab('list');
           loadListCached();
         } else {
           $('applyAlert').innerHTML = '<div class="alert err">操作失败：' + esc(op.error || '未知错误') + '</div>' +
@@ -632,18 +770,78 @@
     state.polling = setInterval(tick, 1200);
   }
 
+  function openSettings() {
+    api('/api/settings').then(function (s) {
+      state.settings.appname_prefix = s.appname_prefix || '';
+      state.settings.appname_suffix = s.appname_suffix || '';
+      var prefix = esc(state.settings.appname_prefix);
+      var suffix = esc(state.settings.appname_suffix);
+      openModal('全局设置',
+        '<p class="lede" style="margin-top:0">应用标识的公共前缀与后缀，只影响新建时的自动建议，不会改动已创建的应用。</p>' +
+        '<div class="grid-2">' +
+        '<div class="field"><label for="setPrefix">前缀</label><input id="setPrefix" class="input mono" maxlength="16" value="' + prefix + '" placeholder="proxy."><div class="help">最多 16 字节，只允许字母、数字、. _ -；非空时必须以字母或数字开头。</div></div>' +
+        '<div class="field"><label for="setSuffix">后缀</label><input id="setSuffix" class="input mono" maxlength="16" value="' + suffix + '" placeholder=".prod"><div class="help">最多 16 字节；前后缀合计不超过 24 字节。</div></div>' +
+        '</div>' +
+        '<div class="field"><label>预览</label><div id="affixPreview" class="mono faint"></div><div id="settingsError" class="error"></div></div>',
+        [
+          { label: '取消' },
+          { label: '保存', cls: 'primary', onClick: function (close) { saveSettings(close); } }
+        ]);
+      ['setPrefix', 'setSuffix'].forEach(function (id) {
+        var el = $(id);
+        if (el) el.addEventListener('input', updateAffixPreview);
+      });
+      updateAffixPreview();
+    }).catch(function (err) { toast(msgOf(err), true); });
+  }
+
+  function settingsInput() {
+    return {
+      appname_prefix: $('setPrefix') ? $('setPrefix').value : '',
+      appname_suffix: $('setSuffix') ? $('setSuffix').value : ''
+    };
+  }
+
+  function updateAffixPreview() {
+    if (!$('affixPreview')) return;
+    var s = settingsInput();
+    var sample = (s.appname_prefix || '') + 'home' + (s.appname_suffix || '') + '.9f3a';
+    $('affixPreview').textContent = sample;
+    if ($('settingsError')) $('settingsError').textContent = '';
+  }
+
+  function saveSettings(close) {
+    var s = settingsInput();
+    api('/api/settings', { method: 'PUT', body: s }).then(function (out) {
+      state.settings.appname_prefix = out.appname_prefix || '';
+      state.settings.appname_suffix = out.appname_suffix || '';
+      if (!state.editId && !state.appnameTouched && $('display_name').value.trim()) suggestAppName();
+      toast('设置已保存');
+      close();
+    }).catch(function (err) {
+      if ($('settingsError')) $('settingsError').textContent = msgOf(err);
+      else toast(msgOf(err), true);
+    });
+  }
+
   function init() {
     loadHealth();
+    loadSettings();
+    loadNetwork();
     loadListCached();
     loadVolumes();
 
-    $('tabList').addEventListener('click', function () { switchTab('list'); loadListCached(); });
-    $('tabWizard').addEventListener('click', function () {
-      switchTab('wizard');
-      if (!state.editId) resetForm();
-    });
+    $('settingsBtn').addEventListener('click', openSettings);
     $('newBtn').addEventListener('click', startNew);
-    $('refreshBtn').addEventListener('click', function () { loadListCached(); loadHealth(); });
+    $('wizardBackBtn').addEventListener('click', function () {
+      switchTab('list');
+      loadListCached();
+    });
+    $('refreshBtn').addEventListener('click', function () {
+      loadListCached();
+      loadHealth();
+      loadNetwork();
+    });
     $('listBody').addEventListener('click', onListClick);
     $('testBtn').addEventListener('click', testTarget);
     $('checkNameBtn').addEventListener('click', checkName);

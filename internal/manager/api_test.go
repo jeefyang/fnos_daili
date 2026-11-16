@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/jeefyang/fnos_daili/internal/state"
 )
 
 func TestAPIGetTargetsSetsCSRFCookie(t *testing.T) {
@@ -97,6 +99,91 @@ func TestAPIPostAllowsLoopbackCGIUpstream(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d body = %s", rec.Code, rec.Body)
+	}
+}
+
+func TestAPISettingsRoundTrip(t *testing.T) {
+	s, _ := newTestService(t)
+	h := s.Handler(http.FileServerFS(UI()))
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/api/settings", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d body = %s", rec.Code, rec.Body)
+	}
+	var got state.Settings
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.AppNamePrefix != "proxy." || got.AppNameSuffix != "" {
+		t.Fatalf("default settings = %+v", got)
+	}
+
+	body := `{"appname_prefix":"-bad","appname_suffix":""}`
+	req = httptest.NewRequest(http.MethodPut, "http://example.com/api/settings", strings.NewReader(body))
+	req.Header.Set("X-CSRF-Token", s.Token())
+	req.Header.Set("Origin", "http://example.com")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid PUT status = %d body = %s", rec.Code, rec.Body)
+	}
+
+	body = `{"appname_prefix":"daili.","appname_suffix":".prod"}`
+	req = httptest.NewRequest(http.MethodPut, "http://example.com/api/settings", strings.NewReader(body))
+	req.Header.Set("X-CSRF-Token", s.Token())
+	req.Header.Set("Origin", "http://example.com")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("valid PUT status = %d body = %s", rec.Code, rec.Body)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.AppNamePrefix != "daili." || got.AppNameSuffix != ".prod" {
+		t.Fatalf("saved settings = %+v", got)
+	}
+	if s.Settings().AppNamePrefix != "daili." {
+		t.Fatalf("service settings = %+v", s.Settings())
+	}
+}
+
+func TestAPINetworkReportsLAN(t *testing.T) {
+	s, _ := newTestService(t)
+	h := s.Handler(http.FileServerFS(UI()))
+
+	cases := []struct {
+		name string
+		ip   string
+		want bool
+	}{
+		{"private", "192.168.1.20", true},
+		{"loopback", "127.0.0.1", true},
+		{"public", "203.0.113.9", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "http://example.com/api/network", nil)
+			req.Header.Set("X-Daili-Client-IP", tc.ip)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d body = %s", rec.Code, rec.Body)
+			}
+			var got struct {
+				ClientIP string `json:"client_ip"`
+				LAN      *bool  `json:"lan"`
+				Known    bool   `json:"known"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if !got.Known || got.LAN == nil || *got.LAN != tc.want {
+				t.Fatalf("network = %+v", got)
+			}
+		})
 	}
 }
 
