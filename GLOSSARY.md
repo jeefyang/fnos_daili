@@ -81,3 +81,11 @@ fnOS 入口的一种运行方式：`app/ui/config` 的 `url` 写成 `/cgi/ThirdP
 ## 丢失 (Missing)
 
 托管台有记录、但应用中心里已不存在对应应用的代理应用。保留记录，提供重装或删除，不把记录当成已安装。
+
+## 入口前缀 (Entry prefix)
+
+CGI 入口的固定路径前缀 `/cgi/ThirdParty/<appname>/index.cgi`。反代层用它拼 Cookie 的 `Path` 和同源 `Location`，保证目标站点的跳转与会话仍停留在代理入口下。
+
+## 操作 (Operation)
+
+托管台发起的一次异步变更，取值为 `install`、`upgrade`、`reinstall`、`uninstall`、`rollback`、`start` 之一。记录在托管台状态的 `last_operation` 里，界面按 operation id 轮询进度；同一目标同时只允许一个变更操作。
