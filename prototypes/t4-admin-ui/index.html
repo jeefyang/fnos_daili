@@ -1,0 +1,1362 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T4 · 托管台界面原型</title>
+<style>
+  :root {
+    --ink: #172033;
+    --muted: #667085;
+    --line: #dfe4ec;
+    --blue: #2557d6;
+    --blue-soft: #eaf0ff;
+    --green: #157f5b;
+    --green-soft: #e8f6ef;
+    --red: #b42318;
+    --red-soft: #fef0ef;
+    --amber: #9a6700;
+    --amber-soft: #fff7e0;
+    --paper: #f7f4ed;
+    --radius: 12px;
+    --shadow: 0 10px 30px rgba(23, 32, 51, .08);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: var(--ink);
+    background: #f4f7fb;
+    padding-top: 30px;
+    padding-bottom: 72px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  button, input, textarea, select { font: inherit; }
+  button { cursor: pointer; }
+  a { color: var(--blue); }
+  .proto-ribbon {
+    position: fixed; top: 0; left: 0; right: 0; height: 30px; z-index: 70;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 14px; background: #111827; color: #e5e7eb;
+    font-size: 11px; letter-spacing: .02em;
+  }
+  .proto-ribbon b { color: #fff; font-weight: 600; }
+  .proto-ribbon span { opacity: .8; }
+  .icon-preview {
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 18px; color: #fff; font-weight: 800; font-size: 28px;
+    background: linear-gradient(145deg, #2557d6, #6d8cff);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.22);
+    flex: 0 0 auto;
+  }
+  .status {
+    display: inline-flex; align-items: center; gap: 5px;
+    border-radius: 999px; padding: 2px 9px; font-size: 12px; white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .status.installed { color: var(--green); background: var(--green-soft); border-color: #c9ead9; }
+  .status.generated { color: var(--blue); background: var(--blue-soft); border-color: #d4e0ff; }
+  .status.failed { color: var(--red); background: var(--red-soft); border-color: #f6d2cf; }
+  .status.running { color: var(--amber); background: var(--amber-soft); border-color: #f1dfa7; }
+  .status.uninstalled { color: var(--muted); background: #f1f3f7; border-color: #e1e5ec; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    border: 1px solid var(--line); background: #fff; color: var(--ink);
+    border-radius: 9px; padding: 8px 13px; line-height: 1.2; white-space: nowrap;
+  }
+  .btn:hover { border-color: #b9c2d2; background: #fafbfe; }
+  .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .btn.primary:hover { background: #1d47b3; }
+  .btn.danger { color: var(--red); border-color: #f3c4c0; background: #fff8f7; }
+  .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+  .btn.small { padding: 5px 9px; font-size: 12px; border-radius: 7px; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+  .field-label { font-size: 13px; font-weight: 650; color: #263248; display: flex; align-items: center; gap: 6px; }
+  .field-label em { font-style: normal; font-size: 10px; color: var(--red); background: var(--red-soft); padding: 1px 5px; border-radius: 4px; font-weight: 500; }
+  .field-help { font-size: 12px; color: var(--muted); line-height: 1.45; }
+  .field-error { font-size: 12px; color: var(--red); line-height: 1.45; }
+  .field input[type="text"], .field input[type="search"], .field textarea, .field select {
+    width: 100%; border: 1px solid var(--line); border-radius: 9px;
+    padding: 10px 11px; background: #fff; color: var(--ink); outline: none;
+  }
+  .field input:focus, .field textarea:focus, .field select:focus { border-color: #8ba7ef; box-shadow: 0 0 0 3px rgba(37,87,214,.10); }
+  .field input:disabled { background: #f5f6f9; color: #687386; }
+  .field textarea { min-height: 74px; resize: vertical; }
+  .field .input-row { display: flex; gap: 8px; }
+  .field .input-row input { flex: 1; }
+  .field.invalid input, .field.invalid textarea { border-color: #e7a7a2; background: #fffafa; }
+  .check { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: #344054; }
+  .check input { margin-top: 3px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .toast {
+    position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%); z-index: 90;
+    background: #111827; color: #fff; padding: 9px 14px; border-radius: 9px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.22); font-size: 13px; max-width: 80vw;
+  }
+  .switcher {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 80;
+    display: flex; align-items: center; gap: 8px; background: #fff;
+    border: 1px solid #cfd6e3; border-radius: 999px; padding: 6px 8px;
+    box-shadow: 0 8px 30px rgba(23,32,51,.18); font-size: 12px;
+  }
+  .switcher button { width: 28px; height: 28px; border-radius: 50%; border: 0; background: #eef2f9; color: #172033; font-size: 15px; line-height: 1; }
+  .switcher button:hover { background: #e2e8f4; }
+  .switcher .variant-label { min-width: 154px; text-align: center; color: #344054; }
+  .switcher .variant-label b { color: #111827; }
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 100; background: rgba(15,23,42,.42);
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .modal {
+    width: min(800px, 100%); max-height: min(78vh, 760px); overflow: auto;
+    background: #fff; border-radius: 16px; box-shadow: 0 24px 70px rgba(0,0,0,.25);
+    padding: 22px 24px 24px;
+  }
+  .modal h3 { margin: 0 0 4px; font-size: 18px; }
+  .modal .modal-sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+  .modal table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .modal th, .modal td { text-align: left; padding: 8px 8px; border-bottom: 1px solid #edf0f5; vertical-align: top; }
+  .modal th { color: #475467; font-weight: 650; background: #fafbfc; position: sticky; top: 0; }
+  .modal .close-row { display: flex; justify-content: flex-end; margin-top: 16px; }
+  .empty { color: var(--muted); text-align: center; padding: 48px 20px; border: 1px dashed #d5dbe6; border-radius: 12px; background: #fff; }
+  .banner {
+    display: flex; align-items: flex-start; gap: 9px; padding: 11px 13px;
+    background: var(--amber-soft); border: 1px solid #f1dfa7; color: #6b4d00;
+    border-radius: 10px; font-size: 12.5px; line-height: 1.5; margin-bottom: 16px;
+  }
+  .banner.danger { background: var(--red-soft); border-color: #f6d2cf; color: #8f1d14; }
+  .banner.info { background: var(--blue-soft); border-color: #d4e0ff; color: #1d3f9e; }
+  .section-title { margin: 0 0 4px; font-size: 16px; }
+  .section-sub { margin: 0 0 16px; color: var(--muted); font-size: 12.5px; }
+  .divider { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
+
+  /* A: wizard */
+  .a-shell { max-width: 1180px; margin: 0 auto; padding: 24px 22px 40px; }
+  .a-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+  .a-brand { display: flex; align-items: center; gap: 10px; }
+  .a-brand-mark { width: 34px; height: 34px; border-radius: 10px; background: #172033; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; }
+  .a-brand strong { font-size: 16px; letter-spacing: -.01em; }
+  .a-brand small { display: block; color: var(--muted); font-size: 11px; }
+  .a-actions { display: flex; align-items: center; gap: 8px; }
+  .a-card { background: #fff; border: 1px solid #e3e8f0; border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+  .a-list-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px; border-bottom: 1px solid #edf0f5; }
+  .a-list-head h2 { margin: 0; font-size: 15px; }
+  .a-list-head p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+  .a-table { width: 100%; border-collapse: collapse; }
+  .a-table th { text-align: left; color: #667085; font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; padding: 11px 14px; border-bottom: 1px solid #edf0f5; background: #fbfcfe; }
+  .a-table td { padding: 13px 14px; border-bottom: 1px solid #f0f2f7; vertical-align: middle; }
+  .a-table tr:last-child td { border-bottom: 0; }
+  .a-table tr:hover td { background: #fafcff; }
+  .a-app { display: flex; align-items: center; gap: 10px; min-width: 190px; }
+  .a-app .t { font-weight: 650; }
+  .a-app .s { color: var(--muted); font-size: 11px; }
+  .a-target { color: #475467; font-size: 12px; }
+  .a-port { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #475467; }
+  .a-row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+  .a-wizard { display: grid; grid-template-columns: 190px minmax(0, 1fr) 280px; gap: 18px; align-items: start; }
+  .a-steps { padding: 12px 0; }
+  .a-step { display: flex; gap: 10px; padding: 9px 10px; border-radius: 9px; color: #7b8496; font-size: 13px; }
+  .a-step .num { width: 22px; height: 22px; border-radius: 50%; border: 1px solid #d4dae5; display: flex; align-items: center; justify-content: center; font-size: 11px; flex: 0 0 auto; }
+  .a-step.active { background: var(--blue-soft); color: #173a97; font-weight: 650; }
+  .a-step.active .num { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .a-step.done { color: var(--green); }
+  .a-step.done .num { background: var(--green-soft); border-color: #b9e2cf; color: var(--green); }
+  .a-step small { display: block; font-weight: 400; color: #98a2b3; font-size: 11px; margin-top: 1px; }
+  .a-panel { background: #fff; border: 1px solid #e3e8f0; border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+  .a-panel-head { padding: 18px 20px 14px; border-bottom: 1px solid #edf0f5; }
+  .a-panel-head h2 { margin: 0; font-size: 18px; letter-spacing: -.015em; }
+  .a-panel-head p { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
+  .a-panel-body { padding: 20px; }
+  .a-panel-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 20px; border-top: 1px solid #edf0f5; background: #fbfcfe; }
+  .a-preview { background: #172033; color: #e5e7eb; border-radius: 14px; padding: 16px; position: sticky; top: 18px; }
+  .a-preview h3 { margin: 0 0 2px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #9ca3af; }
+  .a-preview .pv-name { font-size: 16px; font-weight: 650; color: #fff; margin-top: 8px; }
+  .a-preview .pv-target { color: #c7d2fe; font-size: 11.5px; word-break: break-all; margin-top: 3px; }
+  .a-preview .pv-row { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid rgba(255,255,255,.10); padding: 9px 0; font-size: 11.5px; }
+  .a-preview .pv-row span:first-child { color: #9ca3af; }
+  .a-preview .pv-row span:last-child { text-align: right; word-break: break-all; }
+  .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+  .mode-card { text-align: left; border: 1px solid var(--line); background: #fff; border-radius: 11px; padding: 12px; }
+  .mode-card strong { display: block; font-size: 13px; margin-bottom: 3px; }
+  .mode-card span { display: block; font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+  .mode-card.active { border-color: #7c9bf0; background: var(--blue-soft); box-shadow: 0 0 0 2px rgba(37,87,214,.06); }
+  .mode-card.active strong { color: #173a97; }
+  .test-result { font-size: 12px; margin-top: 7px; }
+  .test-result.ok { color: var(--green); }
+  .test-result.bad { color: var(--red); }
+  .test-result.testing { color: var(--amber); }
+  .summary-box { border: 1px solid #e3e8f0; border-radius: 12px; padding: 14px; background: #fbfcfe; }
+  .summary-box .sum-row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px dashed #e7ebf2; font-size: 12.5px; }
+  .summary-box .sum-row:last-child { border-bottom: 0; }
+  .summary-box .sum-row span:first-child { color: var(--muted); }
+  .summary-box .sum-row span:last-child { text-align: right; word-break: break-all; }
+  .job { border: 1px solid #e3e8f0; border-radius: 12px; overflow: hidden; }
+  .job-head { padding: 12px 14px; background: #fbfcfe; border-bottom: 1px solid #edf0f5; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .job-head strong { font-size: 13px; }
+  .job-steps { list-style: none; margin: 0; padding: 10px 14px; }
+  .job-steps li { display: flex; gap: 9px; align-items: flex-start; padding: 7px 0; font-size: 12.5px; color: #98a2b3; }
+  .job-steps li .dot { width: 18px; height: 18px; border-radius: 50%; border: 1px solid #d4dae5; display: flex; align-items: center; justify-content: center; font-size: 10px; flex: 0 0 auto; margin-top: 1px; }
+  .job-steps li.done { color: #344054; }
+  .job-steps li.done .dot { background: var(--green-soft); border-color: #b9e2cf; color: var(--green); }
+  .job-steps li.active { color: #173a97; font-weight: 600; }
+  .job-steps li.active .dot { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .job-steps li.failed { color: var(--red); font-weight: 600; }
+  .job-steps li.failed .dot { background: var(--red); border-color: var(--red); color: #fff; }
+  .job-body { padding: 0 14px 14px; }
+  .job-error { background: var(--red-soft); border: 1px solid #f6d2cf; color: #8f1d14; border-radius: 9px; padding: 10px 11px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+  .job-success { background: var(--green-soft); border: 1px solid #c9ead9; color: #116149; border-radius: 9px; padding: 10px 11px; font-size: 12px; line-height: 1.5; }
+  .job-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+  .job-log { margin-top: 10px; font-size: 11.5px; color: var(--muted); }
+  .job-log summary { cursor: pointer; }
+  .job-log pre { white-space: pre-wrap; background: #f8fafc; border: 1px solid #e8edf4; border-radius: 8px; padding: 8px; max-height: 150px; overflow: auto; }
+
+  /* B: workbench */
+  body[data-variant="B"] { background: #f8fafc; }
+  .b-shell { min-height: calc(100vh - 102px); display: grid; grid-template-columns: 292px minmax(0, 1fr); }
+  .b-side { background: #101827; color: #d1d5db; padding: 18px 14px; display: flex; flex-direction: column; gap: 12px; }
+  .b-brand { display: flex; align-items: center; gap: 9px; padding: 0 4px 6px; }
+  .b-brand-mark { width: 30px; height: 30px; border-radius: 8px; background: #2557d6; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; }
+  .b-brand strong { color: #fff; font-size: 14px; }
+  .b-brand small { display: block; color: #9ca3af; font-size: 10px; }
+  .b-new { width: 100%; border: 1px solid #3b4a63; background: #1f2a3d; color: #fff; border-radius: 8px; padding: 8px 10px; text-align: left; font-size: 13px; }
+  .b-new:hover { background: #26344b; }
+  .b-search { width: 100%; border: 1px solid #2f3b50; background: #0b1220; color: #e5e7eb; border-radius: 8px; padding: 7px 9px; font-size: 12px; outline: none; }
+  .b-search::placeholder { color: #6b7280; }
+  .b-list { display: flex; flex-direction: column; gap: 3px; overflow: auto; }
+  .b-item { border: 1px solid transparent; background: transparent; color: #d1d5db; text-align: left; border-radius: 8px; padding: 9px; display: flex; gap: 9px; align-items: flex-start; }
+  .b-item:hover { background: #172235; }
+  .b-item.active { background: #1c2b44; border-color: #36507a; }
+  .b-item .t { font-size: 12.5px; color: #f3f4f6; font-weight: 600; line-height: 1.35; }
+  .b-item .s { font-size: 10.5px; color: #9ca3af; margin-top: 2px; word-break: break-all; }
+  .b-item .status { font-size: 10px; padding: 1px 7px; margin-top: 4px; }
+  .b-side-foot { margin-top: auto; color: #6b7280; font-size: 10.5px; padding: 8px 4px 0; border-top: 1px solid #243044; }
+  .b-main { min-width: 0; }
+  .b-top { height: 58px; border-bottom: 1px solid #e5e9f0; background: #fff; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 20px; }
+  .b-crumb { color: #667085; font-size: 12px; }
+  .b-crumb b { color: #172033; }
+  .b-top-actions { display: flex; gap: 7px; }
+  .b-content { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 22px; padding: 22px; align-items: start; }
+  .b-form { background: #fff; border: 1px solid #e5e9f0; border-radius: 12px; padding: 18px 20px 20px; }
+  .b-form h2 { margin: 0 0 2px; font-size: 18px; }
+  .b-form .sub { margin: 0 0 18px; color: var(--muted); font-size: 12.5px; }
+  .b-section { border-top: 1px solid #edf0f5; padding-top: 16px; margin-top: 16px; }
+  .b-section:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+  .b-section h3 { margin: 0 0 2px; font-size: 13px; letter-spacing: .01em; }
+  .b-section p.hint { margin: 0 0 14px; color: var(--muted); font-size: 11.5px; }
+  .b-preview { background: #fff; border: 1px solid #e5e9f0; border-radius: 12px; padding: 16px; position: sticky; top: 14px; }
+  .b-preview .entry-card { border: 1px solid #e1e6ef; border-radius: 10px; padding: 12px; background: #fbfcfe; }
+  .b-preview .entry-card .top { display: flex; gap: 9px; align-items: center; }
+  .b-preview .entry-card .name { font-weight: 650; font-size: 13px; }
+  .b-preview .entry-card .url { color: var(--muted); font-size: 10.5px; word-break: break-all; margin-top: 6px; }
+  .b-preview .meta { margin-top: 12px; font-size: 11.5px; color: #475467; }
+  .b-preview .meta div { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px dashed #e7ebf2; }
+  .b-preview .meta div:last-child { border-bottom: 0; }
+  .b-preview .meta span:first-child { color: var(--muted); }
+  .b-preview .meta span:last-child { text-align: right; word-break: break-all; }
+  .b-preview .actions { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; }
+  .b-preview .actions .btn { width: 100%; }
+  .b-detail { background: #fff; border: 1px solid #e5e9f0; border-radius: 12px; padding: 22px; }
+  .b-detail .hero { display: flex; gap: 13px; align-items: flex-start; }
+  .b-detail h2 { margin: 0; font-size: 20px; letter-spacing: -.02em; }
+  .b-detail .appname { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+  .b-detail .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
+  .b-detail .kv { border-top: 1px solid #edf0f5; padding-top: 8px; }
+  .b-detail .kv .k { color: var(--muted); font-size: 11px; }
+  .b-detail .kv .v { font-size: 12.5px; word-break: break-all; margin-top: 2px; }
+  .b-detail .detail-actions { display: flex; gap: 7px; margin-top: 20px; flex-wrap: wrap; }
+
+  /* C: document / manifest */
+  body[data-variant="C"] { background: var(--paper); }
+  .c-shell { max-width: 1240px; margin: 0 auto; padding: 24px 22px 40px; }
+  .c-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; border-bottom: 2px solid #1f2937; padding-bottom: 10px; margin-bottom: 18px; }
+  .c-top h1 { font-family: Georgia, "Songti SC", "SimSun", serif; font-size: 26px; letter-spacing: -.03em; margin: 0; font-weight: 650; }
+  .c-top .kicker { color: #6b7280; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 3px; }
+  .c-top .meta { color: #6b7280; font-size: 12px; text-align: right; }
+  .c-ledger { background: #fffdf8; border: 1px solid #ded7c9; box-shadow: 3px 3px 0 #e7dfd0; margin-bottom: 20px; }
+  .c-ledger-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid #ded7c9; background: #f3eee3; }
+  .c-ledger-head strong { font-family: Georgia, "Songti SC", serif; font-size: 14px; }
+  .c-table { width: 100%; border-collapse: collapse; }
+  .c-table th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: #857b6c; padding: 8px 12px; border-bottom: 1px solid #e7dfd0; }
+  .c-table td { padding: 9px 12px; border-bottom: 1px solid #efe9de; font-size: 12px; vertical-align: middle; }
+  .c-table tr:last-child td { border-bottom: 0; }
+  .c-table tr:hover td { background: #fbf7ee; }
+  .c-app { display: flex; align-items: center; gap: 8px; }
+  .c-app .t { font-weight: 650; }
+  .c-app .s { color: #8a8173; font-size: 10.5px; }
+  .c-editor { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 24px; align-items: start; }
+  .c-form { background: #fffdf8; border: 1px solid #ded7c9; box-shadow: 3px 3px 0 #e7dfd0; padding: 20px 22px 22px; }
+  .c-form h2 { font-family: Georgia, "Songti SC", serif; margin: 0 0 2px; font-size: 22px; letter-spacing: -.02em; }
+  .c-form .sub { margin: 0 0 18px; color: #7a7061; font-size: 12.5px; }
+  .c-section { border-top: 1px solid #e7dfd0; padding-top: 16px; margin-top: 16px; }
+  .c-section:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+  .c-section h3 { font-family: Georgia, "Songti SC", serif; margin: 0 0 2px; font-size: 14px; }
+  .c-section .hint { margin: 0 0 14px; color: #8a8173; font-size: 11.5px; }
+  .c-manifest { position: sticky; top: 14px; }
+  .c-tree { background: #172033; color: #d1d5db; border-radius: 10px; padding: 14px; box-shadow: 6px 6px 0 #d8d0c1; }
+  .c-tree h3 { margin: 0 0 2px; color: #f9fafb; font-size: 13px; }
+  .c-tree .sub { color: #9ca3af; font-size: 10.5px; margin-bottom: 10px; }
+  .c-tree pre { margin: 0; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.6; color: #d1d5db; }
+  .c-tree pre .k { color: #93c5fd; }
+  .c-tree pre .v { color: #fde68a; }
+  .c-tree pre .c { color: #6b7280; }
+  .c-tree .actions { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+  .c-tree .actions .btn { width: 100%; }
+  .c-note { background: #f3eee3; border: 1px solid #ded7c9; padding: 10px 12px; font-size: 11.5px; color: #6b6255; margin-top: 12px; line-height: 1.5; }
+  .c-job { margin-top: 14px; }
+
+  @media (max-width: 1060px) {
+    .a-wizard { grid-template-columns: 170px minmax(0, 1fr); }
+    .a-preview { display: none; }
+    .b-content { grid-template-columns: minmax(0, 1fr) 280px; }
+    .c-editor { grid-template-columns: minmax(0, 1fr) 340px; }
+  }
+  @media (max-width: 820px) {
+    .a-wizard { grid-template-columns: 1fr; }
+    .a-steps { display: flex; overflow: auto; gap: 4px; padding: 0 0 8px; }
+    .a-step { white-space: nowrap; }
+    .a-step small { display: none; }
+    .a-table { display: block; overflow-x: auto; }
+    .b-shell { grid-template-columns: 1fr; }
+    .b-side { max-height: 264px; }
+    .b-content { grid-template-columns: 1fr; }
+    .b-preview { position: static; }
+    .c-editor { grid-template-columns: 1fr; }
+    .c-manifest { position: static; }
+    .mode-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="proto-ribbon"><span><b>原型</b> · T4 托管台界面</span><span>不会真的打包或安装 · 数据只在内存里</span></div>
+<div id="app"></div>
+<script>
+(function () {
+  'use strict';
+
+  var app = document.getElementById('app');
+  var VARIANT_LABELS = { A: '向导式', B: '工作台式', C: '清单 / manifest 式' };
+  var VARIANT_KEYS = ['A', 'B', 'C'];
+
+  var state = {
+    variant: 'A',
+    screen: 'list',
+    mode: 'create',
+    editingId: null,
+    selected: null,
+    step: 1,
+    draft: null,
+    job: null,
+    test: null,
+    showErrors: false,
+    advanced: false,
+    simulateFail: false,
+    search: '',
+    showFields: false,
+    toast: null,
+    nameTouched: false,
+    titleTouched: false,
+    descTouched: false,
+    appnameTouched: false,
+    list: [
+      {
+        appname: 'proxy.home.9f3a',
+        display_name: '家里的 Home Assistant',
+        desc: '通过代理访问 http://192.168.1.10:8123',
+        target: 'http://192.168.1.10:8123',
+        mode: 'reverse',
+        port: 20001,
+        status: 'installed',
+        version: '1.0.0',
+        title: '家里的 Home Assistant',
+        ui_type: 'url',
+        all_users: true,
+        skip_tls: false,
+        updated: '2 小时前'
+      },
+      {
+        appname: 'proxy.media.7c2e',
+        display_name: '客厅 Jellyfin',
+        desc: '通过代理访问 http://192.168.1.20:8096',
+        target: 'http://192.168.1.20:8096',
+        mode: 'direct',
+        port: 20002,
+        status: 'installed',
+        version: '1.0.0',
+        title: '客厅 Jellyfin',
+        ui_type: 'url',
+        all_users: true,
+        skip_tls: false,
+        updated: '昨天'
+      },
+      {
+        appname: 'proxy.router.4a1b',
+        display_name: '路由器管理',
+        desc: '通过代理访问 https://192.168.1.1',
+        target: 'https://192.168.1.1',
+        mode: 'reverse',
+        port: 20003,
+        status: 'failed',
+        version: '1.0.0',
+        title: '路由器管理',
+        ui_type: 'url',
+        all_users: true,
+        skip_tls: false,
+        updated: '3 天前',
+        error: '安装步骤失败：appcenter-cli install-local 退出码 1（原型模拟）',
+        failedStep: '安装'
+      }
+    ]
+  };
+
+  function esc(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function truncate(value, n) {
+    var s = String(value == null ? '' : value);
+    return s.length > n ? s.slice(0, n) : s;
+  }
+
+  function hex4() {
+    return Math.floor(Math.random() * 65536).toString(16).padStart(4, '0');
+  }
+
+  function normalizeTarget(raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    if (!s) return { ok: false, error: '请填写目标地址' };
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(s)) s = 'http://' + s;
+    var u;
+    try { u = new URL(s); } catch (e) {
+      return { ok: false, error: '地址格式不对，示例：http://192.168.1.10:8123' };
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+      return { ok: false, error: '只支持 http 或 https' };
+    }
+    if (u.username || u.password) {
+      return { ok: false, error: '不要带用户名或密码' };
+    }
+    if (u.search || u.hash) {
+      return { ok: false, error: '只填 origin，不要带 ? 或 #' };
+    }
+    if (u.pathname !== '/' && u.pathname !== '') {
+      return { ok: false, error: '只填 origin，不要带路径' };
+    }
+    if (!u.hostname) {
+      return { ok: false, error: '缺少主机名或 IP' };
+    }
+    var port = u.port ? Number(u.port) : (u.protocol === 'https:' ? 443 : 80);
+    if (!port || port < 1 || port > 65535) {
+      return { ok: false, error: '端口需在 1–65535' };
+    }
+    var hostname = u.hostname;
+    var displayHost = hostname;
+    if (hostname.indexOf(':') >= 0 && hostname.charAt(0) !== '[') displayHost = '[' + hostname + ']';
+    return {
+      ok: true,
+      value: u.protocol + '//' + u.host,
+      protocol: u.protocol,
+      hostname: hostname,
+      host: u.host,
+      port: port,
+      portText: String(port),
+      displayHost: displayHost
+    };
+  }
+
+  function slugHost(hostname) {
+    var h = String(hostname || '').replace(/^\[|\]$/g, '');
+    var s = h.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return s.slice(0, 18) || 'target';
+  }
+
+  function suggestAppname(target) {
+    var p = normalizeTarget(target);
+    if (!p.ok) return '';
+    var base = 'proxy.' + slugHost(p.hostname) + '.' + p.portText;
+    if (base.length > 27) base = base.slice(0, 27).replace(/[._-]+$/g, '');
+    return (base + '.' + hex4()).slice(0, 32);
+  }
+
+  function defaultName(p) {
+    return truncate('代理 · ' + p.host, 32);
+  }
+
+  function baseDraft() {
+    return {
+      appname: '',
+      display_name: '',
+      desc: '',
+      target: '',
+      mode: 'reverse',
+      port: allocatePort(),
+      version: '1.0.0',
+      title: '',
+      ui_type: 'url',
+      all_users: true,
+      skip_tls: false
+    };
+  }
+
+  function allocatePort() {
+    var used = {};
+    state.list.forEach(function (x) { used[x.port] = true; });
+    if (state.draft && state.draft.port) used[state.draft.port] = true;
+    var p = 20000;
+    while (used[p] && p < 30000) p++;
+    return p < 30000 ? p : 20000;
+  }
+
+  function appnameError(v) {
+    var s = String(v || '').trim();
+    if (!s) return '请填写应用标识';
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,31}$/.test(s)) {
+      return '3–32 位，字母或数字开头，仅字母数字 . _ -';
+    }
+    for (var i = 0; i < state.list.length; i++) {
+      if (state.list[i].appname === s && state.list[i].appname !== state.editingId) {
+        return '已被「' + state.list[i].display_name + '」占用';
+      }
+    }
+    return '';
+  }
+
+  function validateDraft(d) {
+    var errors = [];
+    var p = normalizeTarget(d.target);
+    if (!p.ok) errors.push({ field: 'target', msg: p.error });
+    if (d.mode !== 'reverse' && d.mode !== 'direct') errors.push({ field: 'mode', msg: '请选择模式' });
+    var name = String(d.display_name || '').trim();
+    if (!name) errors.push({ field: 'display_name', msg: '请填写应用名称' });
+    if (name.length > 32) errors.push({ field: 'display_name', msg: '最多 32 个字符' });
+    var ae = appnameError(d.appname);
+    if (ae) errors.push({ field: 'appname', msg: ae });
+    if (String(d.desc || '').length > 120) errors.push({ field: 'desc', msg: '最多 120 个字符' });
+    var title = String(d.title || '').trim();
+    if (!title) errors.push({ field: 'title', msg: '请填写入口标题' });
+    if (title.length > 32) errors.push({ field: 'title', msg: '最多 32 个字符' });
+    if (!/^\d+\.\d+\.\d+$/.test(String(d.version || ''))) errors.push({ field: 'version', msg: '版本形如 1.0.0' });
+    if (d.skip_tls && p.ok && p.protocol !== 'https:') errors.push({ field: 'skip_tls', msg: '只有 https 目标需要这个开关' });
+    return errors;
+  }
+
+  function errorsForStep(step) {
+    var all = validateDraft(state.draft);
+    if (step === 1) return all.filter(function (e) { return e.field === 'target' || e.field === 'mode'; });
+    if (step === 2) return all.filter(function (e) { return e.field === 'display_name' || e.field === 'appname' || e.field === 'desc' || e.field === 'version'; });
+    if (step === 3) return all.filter(function (e) { return e.field === 'title' || e.field === 'skip_tls'; });
+    return all;
+  }
+
+  function errorFor(field) {
+    if (!state.showErrors) return '';
+    var all = validateDraft(state.draft);
+    for (var i = 0; i < all.length; i++) if (all[i].field === field) return all[i].msg;
+    return '';
+  }
+
+  function fieldClass(field) {
+    return errorFor(field) ? 'field invalid' : 'field';
+  }
+
+  function statusLabel(status) {
+    return {
+      installed: '已安装',
+      generated: '已生成',
+      failed: '安装失败',
+      running: '生成中',
+      uninstalled: '未安装'
+    }[status] || status;
+  }
+
+  function modeLabel(mode) {
+    return mode === 'direct' ? '直连' : '反代';
+  }
+
+  function entryUrl(item) {
+    return 'http://nas.local:' + item.port + '/';
+  }
+
+  function findItem(id) {
+    for (var i = 0; i < state.list.length; i++) if (state.list[i].appname === id) return state.list[i];
+    return null;
+  }
+
+  function icon(size) {
+    return '<span class="icon-preview" style="width:' + size + 'px;height:' + size + 'px;font-size:' + Math.round(size * 0.42) + 'px">↗</span>';
+  }
+
+  function textField(label, name, value, help, opts) {
+    opts = opts || {};
+    var err = errorFor(name);
+    return '<label class="' + fieldClass(name) + '">' +
+      '<span class="field-label">' + label + (opts.required ? ' <em>必填</em>' : '') + '</span>' +
+      '<input type="' + (opts.type || 'text') + '" data-field="' + name + '" value="' + esc(value) + '" placeholder="' + esc(opts.placeholder || '') + '" ' + (opts.disabled ? 'disabled' : '') + ' autocomplete="off">' +
+      (help ? '<span class="field-help">' + help + '</span>' : '') +
+      (err ? '<span class="field-error">' + esc(err) + '</span>' : '') +
+      '</label>';
+  }
+
+  function textAreaField(label, name, value, help, opts) {
+    opts = opts || {};
+    var err = errorFor(name);
+    return '<label class="' + fieldClass(name) + '">' +
+      '<span class="field-label">' + label + (opts.required ? ' <em>必填</em>' : '') + '</span>' +
+      '<textarea data-field="' + name + '" placeholder="' + esc(opts.placeholder || '') + '">' + esc(value) + '</textarea>' +
+      (help ? '<span class="field-help">' + help + '</span>' : '') +
+      (err ? '<span class="field-error">' + esc(err) + '</span>' : '') +
+      '</label>';
+  }
+
+  function checkField(label, name, checked, help) {
+    return '<label class="check"><input type="checkbox" data-field="' + name + '" ' + (checked ? 'checked' : '') + '><span>' + label + (help ? '<span class="field-help" style="display:block">' + help + '</span>' : '') + '</span></label>';
+  }
+
+  function modeCards(d) {
+    return '<div class="mode-grid">' +
+      '<button type="button" class="mode-card ' + (d.mode === 'reverse' ? 'active' : '') + '" data-action="mode" data-value="reverse">' +
+      '<strong>反代模式 · 推荐</strong><span>浏览器只访问飞牛端口，代理转发整站；目标不用暴露到桌面。</span></button>' +
+      '<button type="button" class="mode-card ' + (d.mode === 'direct' ? 'active' : '') + '" data-action="mode" data-value="direct">' +
+      '<strong>直连模式</strong><span>入口只返回 302，浏览器随后直连目标；目标必须从桌面可达。</span></button>' +
+      '</div>';
+  }
+
+  function targetBlock(d) {
+    var test = state.test;
+    var testHtml = '';
+    if (test) {
+      if (test.status === 'testing') testHtml = '<div class="test-result testing">正在测试目标…（原型模拟）</div>';
+      if (test.status === 'ok') testHtml = '<div class="test-result ok">✓ ' + esc(test.msg || '可达') + '（原型模拟；不阻止生成）</div>';
+      if (test.status === 'bad') testHtml = '<div class="test-result bad">✕ ' + esc(test.msg || '不可达') + '（不阻止生成）</div>';
+    }
+    return '<div class="' + fieldClass('target') + '">' +
+      '<span class="field-label">目标地址 <em>必填</em></span>' +
+      '<div class="input-row"><input type="text" data-field="target" value="' + esc(d.target) + '" placeholder="192.168.1.10:8123 或 http://192.168.1.10:8123" autocomplete="off"><button type="button" class="btn" data-action="test-target">测试目标</button></div>' +
+      '<span class="field-help">只填 origin（协议 + 主机 + 端口）；省略协议按 http，省略端口按 80/443。不要带路径、? 或 #。</span>' +
+      (errorFor('target') ? '<span class="field-error">' + esc(errorFor('target')) + '</span>' : '') +
+      testHtml +
+      '</div>';
+  }
+
+  function appFields(d, opts) {
+    opts = opts || {};
+    var locked = opts.locked;
+    return textField('应用名称', 'display_name', d.display_name, '显示在飞牛应用中心。默认由目标生成，可改。', { required: true, placeholder: '例如：家里的 Home Assistant' }) +
+      textField('应用标识 (appname)', 'appname', d.appname,
+        locked ? '已安装应用锁定标识；要换名请用「另存为新应用」。' : '3–32 位，字母或数字开头，仅字母数字 . _ -；建议保留自动生成的 proxy.&lt;host&gt;.&lt;4hex&gt;。',
+        { required: true, disabled: locked, placeholder: 'proxy.home.9f3a' }) +
+      textAreaField('描述', 'desc', d.desc, '可选，最多 120 字；默认“通过代理访问 &lt;target&gt;”。', { placeholder: '通过代理访问 http://192.168.1.10:8123' }) +
+      advancedToggle() +
+      (state.advanced ? '<div class="summary-box" style="margin-bottom:16px">' +
+        textField('版本', 'version', d.version, 'manifest.version；默认 1.0.0。', { placeholder: '1.0.0' }) +
+        '<div class="field"><span class="field-label">图标</span><div style="display:flex;align-items:center;gap:10px">' + icon(44) + '<span class="field-help">v1 使用内置默认图标；自定义上传 / 抓 favicon 不在本轮。</span></div></div>' +
+        '</div>' : '');
+  }
+
+  function entryFields(d) {
+    var p = normalizeTarget(d.target);
+    var skipHelp = p.ok && p.protocol === 'https:' ? '自签证书可开；默认关闭。' : '仅 https 目标可用。';
+    return textField('入口标题', 'title', d.title, '显示在飞牛入口卡片上；默认跟随应用名称。', { required: true, placeholder: '家里的 Home Assistant' }) +
+      '<div class="summary-box" style="margin-bottom:16px">' +
+      '<div class="sum-row"><span>入口路径</span><span class="mono">/</span></div>' +
+      '<div class="sum-row"><span>入口类型</span><span>新标签页（url）· v1 固定</span></div>' +
+      '<div class="sum-row"><span>访问地址</span><span class="mono">' + esc('http://nas.local:' + d.port + '/') + '</span></div>' +
+      '</div>' +
+      checkField('所有用户可见（allUsers）', 'all_users', d.all_users, '只控制应用中心可见性，不是鉴权；代理默认开。') +
+      '<div style="height:14px"></div>' +
+      (state.advanced ? '<div class="summary-box">' +
+        checkField('跳过目标证书校验', 'skip_tls', d.skip_tls, skipHelp) +
+        '<div class="field-help" style="margin-top:8px">超时、Host、Cookie、WebSocket 等按 T5 默认值，不在界面逐项暴露。</div>' +
+        '</div>' : '');
+  }
+
+  function advancedToggle() {
+    return '<button type="button" class="btn ghost small" data-action="toggle-advanced">' + (state.advanced ? '收起高级字段 ▴' : '高级字段 ▾') + '</button>';
+  }
+
+  function summaryBox(d) {
+    var p = normalizeTarget(d.target);
+    return '<div class="summary-box">' +
+      '<div class="sum-row"><span>应用标识</span><span class="mono">' + esc(d.appname || '—') + '</span></div>' +
+      '<div class="sum-row"><span>目标</span><span class="mono">' + esc(p.ok ? p.value : (d.target || '—')) + '</span></div>' +
+      '<div class="sum-row"><span>模式</span><span>' + esc(modeLabel(d.mode)) + '</span></div>' +
+      '<div class="sum-row"><span>端口</span><span class="mono">' + esc(d.port) + '</span></div>' +
+      '<div class="sum-row"><span>入口</span><span class="mono">' + esc('http://nas.local:' + d.port + '/') + '</span></div>' +
+      '<div class="sum-row"><span>预计包体</span><span>约 12.4 MB</span></div>' +
+      '</div>';
+  }
+
+  function startPanel(d) {
+    var edit = state.mode === 'edit';
+    return '<div class="summary-box" style="margin-bottom:14px">' + summaryBox(d) + '</div>' +
+      '<label class="check" style="margin-bottom:12px"><input type="checkbox" data-field="simulate_fail" ' + (state.simulateFail ? 'checked' : '') + '><span>演示安装失败 <span class="field-help" style="display:block">原型专用：勾选后停在“安装”步骤，展示失败反馈。</span></span></label>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      '<button type="button" class="btn primary" data-action="generate">' + (edit ? '保存并重装' : '生成并安装') + '</button>' +
+      '<button type="button" class="btn" data-action="generate-only">仅生成 fpk</button>' +
+      '</div>' +
+      '<div class="field-help" style="margin-top:9px">生成会写 appname / manifest / config.json；安装走 appcenter-cli。具体参数由 T2 / V1 定。</div>';
+  }
+
+  function jobSteps(j) {
+    return '<ol class="job-steps">' + j.steps.map(function (s, i) {
+      var cls = '';
+      var mark = String(i + 1);
+      if (j.status === 'failed' && i === j.current) { cls = 'failed'; mark = '×'; }
+      else if (i < j.current || (j.status === 'done' && i <= j.current)) { cls = 'done'; mark = '✓'; }
+      else if (i === j.current && j.status === 'running') { cls = 'active'; mark = '…'; }
+      return '<li class="' + cls + '"><span class="dot">' + mark + '</span><span>' + esc(s) + '</span></li>';
+    }).join('') + '</ol>';
+  }
+
+  function jobHTML(j, d) {
+    var body = '';
+    if (j.status === 'running') {
+      body += '<div class="field-help">正在执行第 ' + (j.current + 1) + ' / ' + j.steps.length + ' 步…</div>';
+    } else if (j.status === 'done') {
+      var installed = j.install;
+      body += '<div class="job-success"><strong>' + (installed ? '已安装到飞牛' : 'fpk 已生成') + '</strong><br>' +
+        (installed ? '入口：<span class="mono">' + esc(entryUrl({ port: d.port })) + '</span>' : '安装包已生成，尚未安装。') +
+        '</div>' +
+        '<div class="job-actions">' +
+        (installed ? '<button type="button" class="btn primary small" data-action="open-entry">打开入口</button>' : '') +
+        '<button type="button" class="btn small" data-action="download">下载 fpk</button>' +
+        '<button type="button" class="btn small" data-action="back">返回列表</button>' +
+        '</div>';
+    } else if (j.status === 'failed') {
+      body += '<div class="job-error"><strong>停在：' + esc(j.steps[j.current]) + '</strong><br>' + esc(j.error || '未知错误') + '</div>' +
+        '<div class="job-actions">' +
+        '<button type="button" class="btn primary small" data-action="retry">重试安装</button>' +
+        '<button type="button" class="btn small" data-action="download">下载 fpk</button>' +
+        '<button type="button" class="btn small" data-action="copy-log">复制日志</button>' +
+        '<button type="button" class="btn ghost small" data-action="back">返回列表</button>' +
+        '</div>';
+    }
+    var log = j.log && j.log.length ? '<details class="job-log"><summary>执行日志（' + j.log.length + ' 行）</summary><pre>' + esc(j.log.join('\n')) + '</pre></details>' : '';
+    return '<div class="job"><div class="job-head"><strong>' + (j.install ? '生成并安装' : '仅生成 fpk') + '</strong><span class="status ' + (j.status === 'done' ? 'installed' : j.status === 'failed' ? 'failed' : 'running') + '">' + (j.status === 'done' ? (j.install ? '已安装' : '已生成') : j.status === 'failed' ? '失败' : '执行中') + '</span></div>' +
+      jobSteps(j) + '<div class="job-body">' + body + log + '</div></div>';
+  }
+
+  function fieldsModalHTML() {
+    if (!state.showFields) return '';
+    return '<div class="modal-backdrop" data-action="close-fields"><div class="modal">' +
+      '<h3>字段清单与默认值</h3><div class="modal-sub">T4 原型用来讨论；不是最终实现。</div>' +
+      '<table><thead><tr><th>字段</th><th>必填</th><th>默认 / 说明</th></tr></thead><tbody>' +
+      '<tr><td>目标地址</td><td>是</td><td>origin（协议 + 主机 + 端口）；省略协议按 http；拒绝 path/query/#。目标测试只提示，不阻止生成。</td></tr>' +
+      '<tr><td>模式</td><td>是</td><td>反代（默认）/ 直连。直连入口 302，后续由浏览器直连目标。</td></tr>' +
+      '<tr><td>应用名称 display_name</td><td>是</td><td>默认「代理 · host:port」，最多 32 字。</td></tr>' +
+      '<tr><td>应用标识 appname</td><td>是</td><td>建议 proxy.&lt;host&gt;.&lt;4hex&gt;；3–32 位，^[A-Za-z0-9][A-Za-z0-9._-]*$；首次安装后锁定。</td></tr>' +
+      '<tr><td>描述 desc</td><td>否</td><td>默认「通过代理访问 &lt;target&gt;」；最多 120 字。</td></tr>' +
+      '<tr><td>版本 version</td><td>高级</td><td>默认 1.0.0；manifest.version。</td></tr>' +
+      '<tr><td>入口标题 title</td><td>是</td><td>默认跟随 display_name；最多 32 字。</td></tr>' +
+      '<tr><td>入口路径 path</td><td>固定</td><td>/，只读；v1 不做子路径。</td></tr>' +
+      '<tr><td>入口类型 ui_type</td><td>固定</td><td>url（新标签页）；v1 不做桌面 iframe。</td></tr>' +
+      '<tr><td>allUsers</td><td>否</td><td>默认开；只控制应用中心可见性，不是鉴权。</td></tr>' +
+      '<tr><td>跳过目标证书校验</td><td>高级</td><td>默认关；仅 https 目标可用。</td></tr>' +
+      '<tr><td>端口</td><td>自动</td><td>20000–29999 自动分配，只读展示；不写 config.json。</td></tr>' +
+      '<tr><td>图标</td><td>否</td><td>v1 内置默认；不支持上传。</td></tr>' +
+      '<tr><td>隐藏字段</td><td>—</td><td>file_types、no_display、control.*、install_volume、逐应用超时 / 认证：v1 不暴露。</td></tr>' +
+      '<tr><td>列表</td><td>—</td><td>名称、appname、目标、模式、端口、状态、入口、操作；v1 不做实时健康检查。</td></tr>' +
+      '<tr><td>编辑</td><td>—</td><td>appname 锁定；保存 = 重新生成并重装；可另存为新应用。</td></tr>' +
+      '</tbody></table>' +
+      '<div class="close-row"><button type="button" class="btn" data-action="close-fields">关闭</button></div>' +
+      '</div></div>';
+  }
+
+  function switcherHTML() {
+    return '<div class="switcher" role="navigation" aria-label="原型变体切换">' +
+      '<button type="button" data-action="prev-variant" title="上一个变体（←）">←</button>' +
+      '<span class="variant-label"><b>' + state.variant + '</b> · ' + VARIANT_LABELS[state.variant] + '</span>' +
+      '<button type="button" data-action="next-variant" title="下一个变体（→）">→</button>' +
+      '</div>';
+  }
+
+  function toastHTML() {
+    return state.toast ? '<div class="toast">' + esc(state.toast) + '</div>' : '';
+  }
+
+  function listActions(item) {
+    return '<div class="a-row-actions">' +
+      '<button type="button" class="btn small" data-action="open-entry" data-id="' + esc(item.appname) + '">打开</button>' +
+      '<button type="button" class="btn small" data-action="edit" data-id="' + esc(item.appname) + '">编辑</button>' +
+      '<button type="button" class="btn small danger" data-action="delete" data-id="' + esc(item.appname) + '">删除</button>' +
+      '</div>';
+  }
+
+  function fieldsButton() {
+    return '<button type="button" class="btn ghost small" data-action="fields">字段清单</button>';
+  }
+
+  function renderA() {
+    var d = state.draft;
+    if (state.screen === 'list') {
+      return '<div class="a-shell">' +
+        '<header class="a-header"><div class="a-brand"><span class="a-brand-mark">↗</span><div><strong>代理打包器</strong><small>把任意 ip:port 装成飞牛应用</small></div></div>' +
+        '<div class="a-actions">' + fieldsButton() + '<button type="button" class="btn primary" data-action="new">+ 新建代理</button></div></header>' +
+        '<section class="a-card"><div class="a-list-head"><div><h2>已管理的代理</h2><p>' + state.list.length + ' 个目标 · 端口 20000–29999 自动分配</p></div></div>' +
+        '<table class="a-table"><thead><tr><th>应用</th><th>目标</th><th>模式</th><th>端口</th><th>状态</th><th></th></tr></thead><tbody>' +
+        (state.list.length ? state.list.map(function (item) {
+          return '<tr><td><div class="a-app">' + icon(34) + '<div><div class="t">' + esc(item.display_name) + '</div><div class="s mono">' + esc(item.appname) + '</div></div></div></td>' +
+            '<td class="a-target mono">' + esc(item.target) + '</td>' +
+            '<td>' + esc(modeLabel(item.mode)) + '</td>' +
+            '<td class="a-port">' + esc(item.port) + '</td>' +
+            '<td><span class="status ' + esc(item.status) + '">' + esc(statusLabel(item.status)) + '</span></td>' +
+            '<td>' + listActions(item) + '</td></tr>';
+        }).join('') : '<tr><td colspan="6"><div class="empty">还没有代理。点右上角新建一个。</div></td></tr>') +
+        '</tbody></table></section></div>';
+    }
+    var steps = ['目标', '应用信息', '入口与模式', '生成 / 安装'];
+    var stepBody = '';
+    if (state.step === 1) stepBody = '<h2>先填目标和模式</h2><p class="section-sub">目标是一个 origin；代理会把它变成一个飞牛应用入口。</p>' + modeCards(d) + targetBlock(d) + '<div class="banner info">目标测试只做提示，不阻止生成：目标暂时离线也可以先打包。</div>';
+    if (state.step === 2) stepBody = '<h2>应用信息</h2><p class="section-sub">这些字段会写进 manifest 和入口配置。</p>' + appFields(d, { locked: state.mode === 'edit' });
+    if (state.step === 3) stepBody = '<h2>入口与安全</h2><p class="section-sub">v1 一个应用一个入口；入口固定新标签页。</p>' + entryFields(d);
+    if (state.step === 4) stepBody = '<h2>生成并安装</h2><p class="section-sub">确认后生成 fpk，并调用 appcenter-cli 安装。</p>' + (state.job ? jobHTML(state.job, d) : startPanel(d));
+    var editBanner = state.mode === 'edit' ? '<div class="banner">正在编辑「' + esc(d.display_name || d.appname) + '」：应用标识锁定。保存会重新生成并重装，不会新建。要保留旧应用请用「另存为新应用」。</div>' : '';
+    var failedBanner = state.mode === 'edit' && findItem(state.editingId) && findItem(state.editingId).status === 'failed' && !state.job ? '<div class="banner danger"><strong>上次安装失败：</strong>' + esc(findItem(state.editingId).error || '') + '</div>' : '';
+    return '<div class="a-shell">' +
+      '<header class="a-header"><div class="a-brand"><span class="a-brand-mark">↗</span><div><strong>' + (state.mode === 'edit' ? '编辑代理' : '新建代理') + '</strong><small>代理打包器</small></div></div>' +
+      '<div class="a-actions">' + fieldsButton() + '<button type="button" class="btn" data-action="back">返回列表</button></div></header>' +
+      '<div class="a-wizard"><aside class="a-steps">' + steps.map(function (s, i) {
+        var cls = i + 1 === state.step ? 'active' : i + 1 < state.step ? 'done' : '';
+        return '<div class="a-step ' + cls + '"><span class="num">' + (i + 1 < state.step ? '✓' : i + 1) + '</span><span>' + s + '<small>' + ['目标 origin', '名称与标识', '入口与可见性', '生成与结果'][i] + '</small></span></div>';
+      }).join('') + '</aside>' +
+      '<section class="a-panel"><div class="a-panel-head"><h2>' + steps[state.step - 1] + '</h2><p>第 ' + state.step + ' / 4 步</p></div><div class="a-panel-body">' + editBanner + failedBanner + stepBody + '</div>' +
+      '<div class="a-panel-foot"><div><button type="button" class="btn ghost" data-action="back">取消</button>' + (state.mode === 'edit' ? ' <button type="button" class="btn ghost" data-action="clone">另存为新应用</button>' : '') + '</div><div style="display:flex;gap:8px">' +
+      (state.step > 1 ? '<button type="button" class="btn" data-action="prev-step">上一步</button>' : '') +
+      (state.step < 4 ? '<button type="button" class="btn primary" data-action="next-step">下一步</button>' : '') +
+      '</div></div></section>' +
+      '<aside class="a-preview"><h3>将生成的入口</h3><div class="pv-name">' + esc(d.display_name || '未命名') + '</div><div class="pv-target">' + esc(d.target || '尚未填写目标') + '</div>' +
+      '<div class="pv-row"><span>appname</span><span class="mono">' + esc(d.appname || '—') + '</span></div>' +
+      '<div class="pv-row"><span>模式</span><span>' + esc(modeLabel(d.mode)) + '</span></div>' +
+      '<div class="pv-row"><span>端口</span><span class="mono">' + esc(d.port) + '</span></div>' +
+      '<div class="pv-row"><span>入口</span><span class="mono">' + esc('http://nas.local:' + d.port + '/') + '</span></div>' +
+      '</aside></div></div>';
+  }
+
+  function bSidebar() {
+    var q = state.search.trim().toLowerCase();
+    var items = state.list.filter(function (x) {
+      if (!q) return true;
+      return (x.display_name + ' ' + x.appname + ' ' + x.target).toLowerCase().indexOf(q) >= 0;
+    });
+    return '<aside class="b-side"><div class="b-brand"><span class="b-brand-mark">↗</span><div><strong>代理打包器</strong><small>workbench</small></div></div>' +
+      '<button type="button" class="b-new" data-action="new">+ 新建代理</button>' +
+      '<input class="b-search" data-field="search" value="' + esc(state.search) + '" placeholder="搜索名称 / 目标 / appname">' +
+      '<div class="b-list">' + (items.length ? items.map(function (item) {
+        return '<button type="button" class="b-item ' + (state.selected === item.appname ? 'active' : '') + '" data-action="select" data-id="' + esc(item.appname) + '">' + icon(30) +
+          '<span style="min-width:0"><span class="t">' + esc(item.display_name) + '</span><span class="s mono">' + esc(item.target) + '</span><span class="status ' + esc(item.status) + '">' + esc(statusLabel(item.status)) + '</span></span></button>';
+      }).join('') : '<div class="empty" style="padding:24px 10px;background:transparent;border-color:#2f3b50;color:#9ca3af">没有匹配项</div>') + '</div>' +
+      '<div class="b-side-foot">' + state.list.length + ' 个目标 · v1 不做实时健康检查</div></aside>';
+  }
+
+  function bDetail() {
+    var item = findItem(state.selected) || state.list[0];
+    if (!item) return '<div class="b-content"><div class="empty">选择左侧应用，或新建一个代理。</div></div>';
+    return '<div class="b-content"><div class="b-detail">' +
+      '<div class="hero">' + icon(56) + '<div><h2>' + esc(item.display_name) + '</h2><div class="appname mono">' + esc(item.appname) + '</div><div style="margin-top:7px"><span class="status ' + esc(item.status) + '">' + esc(statusLabel(item.status)) + '</span></div></div></div>' +
+      (item.status === 'failed' ? '<div class="banner danger" style="margin-top:16px"><strong>上次安装失败：</strong>' + esc(item.error || '') + '</div>' : '') +
+      '<div class="grid">' +
+      '<div class="kv"><div class="k">目标</div><div class="v mono">' + esc(item.target) + '</div></div>' +
+      '<div class="kv"><div class="k">模式</div><div class="v">' + esc(modeLabel(item.mode)) + '</div></div>' +
+      '<div class="kv"><div class="k">端口</div><div class="v mono">' + esc(item.port) + '</div></div>' +
+      '<div class="kv"><div class="k">入口</div><div class="v mono">' + esc(entryUrl(item)) + '</div></div>' +
+      '<div class="kv"><div class="k">allUsers</div><div class="v">' + (item.all_users ? '所有用户可见' : '仅管理员') + '</div></div>' +
+      '<div class="kv"><div class="k">最近更新</div><div class="v">' + esc(item.updated || '—') + '</div></div>' +
+      '</div>' +
+      '<div class="detail-actions"><button type="button" class="btn primary" data-action="edit" data-id="' + esc(item.appname) + '">编辑</button>' +
+      '<button type="button" class="btn" data-action="open-entry" data-id="' + esc(item.appname) + '" ' + (item.status === 'installed' ? '' : 'disabled') + '>打开入口</button>' +
+      '<button type="button" class="btn danger" data-action="delete" data-id="' + esc(item.appname) + '">删除</button></div>' +
+      '</div><aside class="b-preview"><div class="entry-card"><div class="top">' + icon(34) + '<div><div class="name">' + esc(item.title || item.display_name) + '</div><div class="url mono">' + esc(entryUrl(item)) + '</div></div></div></div>' +
+      '<div class="meta"><div><span>appname</span><span class="mono">' + esc(item.appname) + '</span></div><div><span>目标</span><span class="mono">' + esc(item.target) + '</span></div><div><span>模式</span><span>' + esc(modeLabel(item.mode)) + '</span></div></div>' +
+      '<div class="actions"><button type="button" class="btn primary" data-action="edit" data-id="' + esc(item.appname) + '">编辑 / 重装</button></div></aside></div>';
+  }
+
+  function bForm() {
+    var d = state.draft;
+    var edit = state.mode === 'edit';
+    var locked = edit;
+    var item = state.editingId ? findItem(state.editingId) : null;
+    var editBanner = edit ? '<div class="banner">编辑「' + esc(d.display_name || d.appname) + '」：appname 锁定；保存 = 重新生成并重装。<button type="button" class="btn ghost small" data-action="clone" style="margin-left:6px">另存为新应用</button></div>' : '';
+    var failBanner = item && item.status === 'failed' && !state.job ? '<div class="banner danger"><strong>上次安装失败：</strong>' + esc(item.error || '') + '</div>' : '';
+    return '<div class="b-content"><div class="b-form">' + editBanner + failBanner +
+      '<h2>' + (edit ? '编辑代理' : '新建代理') + '</h2><p class="sub">一个目标 → 一个 fpk → 一个入口。所有字段一次填完。</p>' +
+      '<section class="b-section"><h3>目标</h3><p class="hint">只收 origin；目标测试不阻止生成。</p>' + modeCards(d) + targetBlock(d) + '</section>' +
+      '<section class="b-section"><h3>应用</h3><p class="hint">写进 manifest 与入口配置。</p>' + appFields(d, { locked: locked }) + '</section>' +
+      '<section class="b-section"><h3>入口</h3><p class="hint">v1 固定新标签页；allUsers 只控制可见性。</p>' + entryFields(d) + '</section>' +
+      (state.job ? '<section class="b-section"><h3>结果</h3>' + jobHTML(state.job, d) + '</section>' : '') +
+      '<div style="display:flex;gap:8px;margin-top:18px;flex-wrap:wrap"><button type="button" class="btn" data-action="back">取消</button>' +
+      (edit ? '<button type="button" class="btn" data-action="clone">另存为新应用</button>' : '') +
+      '<button type="button" class="btn primary" data-action="generate">' + (edit ? '保存并重装' : '生成并安装') + '</button>' +
+      '<button type="button" class="btn" data-action="generate-only">仅生成 fpk</button></div>' +
+      '</div><aside class="b-preview"><div class="entry-card"><div class="top">' + icon(34) + '<div><div class="name">' + esc(d.title || d.display_name || '未命名') + '</div><div class="url mono">' + esc('http://nas.local:' + d.port + '/') + '</div></div></div></div>' +
+      '<div class="meta"><div><span>appname</span><span class="mono">' + esc(d.appname || '—') + '</span></div><div><span>目标</span><span class="mono">' + esc(d.target || '—') + '</span></div><div><span>模式</span><span>' + esc(modeLabel(d.mode)) + '</span></div><div><span>端口</span><span class="mono">' + esc(d.port) + '</span></div></div>' +
+      '<div class="actions"><button type="button" class="btn primary" data-action="generate">' + (edit ? '保存并重装' : '生成并安装') + '</button><button type="button" class="btn" data-action="generate-only">仅生成 fpk</button></div>' +
+      '<div class="field-help" style="margin-top:9px">安装链参数由 T2 / V1 定；这里只演示交互。</div></aside></div>';
+  }
+
+  function renderB() {
+    var main;
+    if (state.screen === 'edit') main = bForm();
+    else main = bDetail();
+    var title = state.screen === 'edit' ? (state.mode === 'edit' ? '编辑代理' : '新建代理') : '应用详情';
+    return '<div class="b-shell">' + bSidebar() + '<main class="b-main"><div class="b-top"><div class="b-crumb">工作台 / <b>' + esc(title) + '</b></div><div class="b-top-actions">' + fieldsButton() + '<button type="button" class="btn small" data-action="back">列表</button><button type="button" class="btn primary small" data-action="new">+ 新建</button></div></div>' + main + '</main></div>';
+  }
+
+  function cList() {
+    return '<section class="c-ledger"><div class="c-ledger-head"><strong>已管理的代理</strong><span style="font-size:11px;color:#8a8173">' + state.list.length + ' 个目标 · 端口 20000–29999</span></div>' +
+      '<table class="c-table"><thead><tr><th>应用</th><th>目标</th><th>模式</th><th>端口</th><th>状态</th><th></th></tr></thead><tbody>' +
+      (state.list.length ? state.list.map(function (item) {
+        return '<tr><td><div class="c-app">' + icon(28) + '<div><div class="t">' + esc(item.display_name) + '</div><div class="s mono">' + esc(item.appname) + '</div></div></div></td>' +
+          '<td class="mono">' + esc(item.target) + '</td><td>' + esc(modeLabel(item.mode)) + '</td><td class="mono">' + esc(item.port) + '</td>' +
+          '<td><span class="status ' + esc(item.status) + '">' + esc(statusLabel(item.status)) + '</span></td>' +
+          '<td>' + listActions(item) + '</td></tr>';
+      }).join('') : '<tr><td colspan="6"><div class="empty">还没有代理。</div></td></tr>') +
+      '</tbody></table></section>';
+  }
+
+  function manifestText(d) {
+    var p = normalizeTarget(d.target);
+    var target = p.ok ? p.value : '<未填目标>';
+    return [
+      'appname = ' + (d.appname || '<未填>'),
+      'version = ' + (d.version || '1.0.0'),
+      'display_name = ' + (d.display_name || '<未填>'),
+      'platform = x86',
+      'source = thirdparty',
+      'maintainer = fnos_daili',
+      'distributor = fnos_daili',
+      'os_min_version = 0.9.0',
+      'install_type = root',
+      'desktop_uidir = ui',
+      'desktop_applaunchname = ' + (d.appname || '<未填>') + '.main',
+      'service_port = ' + d.port,
+      'checkport = false',
+      'checksum = <md5(app.tgz)>'
+    ].join('\n') + '\n\n# app/config.json\nmode = ' + d.mode + '\ntarget = ' + target;
+  }
+
+  function cManifest(d) {
+    var text = manifestText(d);
+    var lines = text.split('\n').map(function (line) {
+      if (/^(#|\s*$)/.test(line)) return '<span class="c">' + esc(line) + '</span>';
+      var i = line.indexOf(' = ');
+      if (i < 0) return esc(line);
+      return '<span class="k">' + esc(line.slice(0, i)) + '</span><span class="c"> = </span><span class="v">' + esc(line.slice(i + 3)) + '</span>';
+    }).join('\n');
+    return '<aside class="c-manifest"><div class="c-tree"><h3>将生成的包</h3><div class="sub">manifest + app.tgz · 约 12.4 MB</div><pre>' + lines + '</pre>' +
+      '<div class="actions"><button type="button" class="btn primary" data-action="generate">' + (state.mode === 'edit' ? '保存并重装' : '生成并安装') + '</button><button type="button" class="btn" data-action="generate-only">仅生成 fpk</button></div></div>' +
+      (state.job ? '<div class="c-job">' + jobHTML(state.job, d) + '</div>' : '') +
+      '<div class="c-note">appname 一旦安装就锁定；改目标 = 重新生成并重装，不是新建。要并行保留旧应用，用「另存为新应用」。</div></aside>';
+  }
+
+  function cForm() {
+    var d = state.draft;
+    var edit = state.mode === 'edit';
+    var item = state.editingId ? findItem(state.editingId) : null;
+    var editBanner = edit ? '<div class="banner">编辑「' + esc(d.display_name || d.appname) + '」：appname 锁定；保存会重新生成并重装。<button type="button" class="btn ghost small" data-action="clone" style="margin-left:6px">另存为新应用</button></div>' : '';
+    var failBanner = item && item.status === 'failed' && !state.job ? '<div class="banner danger"><strong>上次安装失败：</strong>' + esc(item.error || '') + '</div>' : '';
+    return '<div class="c-editor"><div class="c-form">' + editBanner + failBanner +
+      '<h2>' + (edit ? '编辑代理' : '新建代理') + '</h2><p class="sub">按顺序填完；右侧实时生成 manifest 预览。</p>' +
+      '<section class="c-section"><h3>1. 目标</h3><p class="hint">origin；测试只提示，不阻止生成。</p>' + modeCards(d) + targetBlock(d) + '</section>' +
+      '<section class="c-section"><h3>2. 应用</h3><p class="hint">写进 manifest。</p>' + appFields(d, { locked: edit }) + '</section>' +
+      '<section class="c-section"><h3>3. 入口</h3><p class="hint">v1 固定新标签页。</p>' + entryFields(d) + '</section>' +
+      '<div style="display:flex;gap:8px;margin-top:18px;flex-wrap:wrap"><button type="button" class="btn" data-action="back">取消</button>' + (edit ? '<button type="button" class="btn" data-action="clone">另存为新应用</button>' : '') + '</div>' +
+      '</div>' + cManifest(d) + '</div>';
+  }
+
+  function renderC() {
+    return '<div class="c-shell"><header class="c-top"><div><div class="kicker">fnos_daili / proxy bundler</div><h1>代理打包器</h1></div><div class="meta">' + fieldsButton() + ' <button type="button" class="btn small" data-action="new">+ 新建代理</button></div></header>' +
+      cList() +
+      (state.screen === 'edit' ? cForm() : '') +
+      '</div>';
+  }
+
+  function render(resetScroll) {
+    var active = document.activeElement;
+    var focusField = active && active.getAttribute ? active.getAttribute('data-field') : null;
+    var selStart = active && active.selectionStart;
+    var selEnd = active && active.selectionEnd;
+    var y = window.scrollY;
+    var html;
+    if (state.variant === 'B') html = renderB();
+    else if (state.variant === 'C') html = renderC();
+    else html = renderA();
+    app.innerHTML = html + switcherHTML() + fieldsModalHTML() + toastHTML();
+    document.body.setAttribute('data-variant', state.variant);
+    if (focusField) {
+      var el = app.querySelector('[data-field="' + focusField + '"]');
+      if (el) {
+        el.focus();
+        if (selStart != null && el.setSelectionRange) {
+          try { el.setSelectionRange(selStart, selEnd); } catch (e) {}
+        }
+      }
+    }
+    if (resetScroll) window.scrollTo(0, 0);
+    else window.scrollTo(0, y);
+  }
+
+  function setVariant(v) {
+    if (VARIANT_KEYS.indexOf(v) < 0) v = 'A';
+    state.variant = v;
+    try {
+      var u = new URL(location.href);
+      u.searchParams.set('variant', v);
+      history.replaceState(null, '', u);
+    } catch (e) {}
+    render(true);
+  }
+
+  function cycleVariant(delta) {
+    var i = VARIANT_KEYS.indexOf(state.variant);
+    setVariant(VARIANT_KEYS[(i + delta + VARIANT_KEYS.length) % VARIANT_KEYS.length]);
+  }
+
+  function toast(msg) {
+    state.toast = msg;
+    render();
+    var current = msg;
+    setTimeout(function () {
+      if (state.toast === current) {
+        state.toast = null;
+        render();
+      }
+    }, 1900);
+  }
+
+  function openNew() {
+    state.screen = 'edit';
+    state.mode = 'create';
+    state.editingId = null;
+    state.step = 1;
+    state.draft = baseDraft();
+    state.job = null;
+    state.test = null;
+    state.showErrors = false;
+    state.advanced = false;
+    state.simulateFail = false;
+    state.nameTouched = false;
+    state.titleTouched = false;
+    state.descTouched = false;
+    state.appnameTouched = false;
+    render(true);
+  }
+
+  function openEdit(id) {
+    var item = findItem(id);
+    if (!item) return;
+    state.screen = 'edit';
+    state.mode = 'edit';
+    state.editingId = id;
+    state.selected = id;
+    state.step = 1;
+    state.draft = {
+      appname: item.appname,
+      display_name: item.display_name,
+      desc: item.desc,
+      target: item.target,
+      mode: item.mode,
+      port: item.port,
+      version: item.version || '1.0.0',
+      title: item.title || item.display_name,
+      ui_type: 'url',
+      all_users: item.all_users !== false,
+      skip_tls: !!item.skip_tls
+    };
+    state.job = null;
+    state.test = null;
+    state.showErrors = false;
+    state.advanced = false;
+    state.nameTouched = true;
+    state.titleTouched = true;
+    state.descTouched = true;
+    state.appnameTouched = true;
+    render(true);
+  }
+
+  function backToList() {
+    if (state.job && state.job.status === 'running') {
+      // 原型里不保留后台任务；返回即取消演示。
+    }
+    state.screen = 'list';
+    state.job = null;
+    state.step = 1;
+    state.showErrors = false;
+    state.test = null;
+    render(true);
+  }
+
+  function cloneDraft() {
+    var d = state.draft;
+    state.mode = 'create';
+    state.editingId = null;
+    state.screen = 'edit';
+    state.step = 1;
+    state.job = null;
+    state.nameTouched = true;
+    state.titleTouched = true;
+    state.descTouched = true;
+    state.appnameTouched = true;
+    state.draft = {
+      appname: suggestAppname(d.target),
+      display_name: d.display_name + '（副本）',
+      desc: d.desc,
+      target: d.target,
+      mode: d.mode,
+      port: allocatePort(),
+      version: d.version,
+      title: d.title + '（副本）',
+      ui_type: 'url',
+      all_users: d.all_users,
+      skip_tls: d.skip_tls
+    };
+    render(true);
+  }
+
+  function setField(name, value) {
+    if (name === 'search') {
+      state.search = value;
+      render();
+      return;
+    }
+    if (name === 'simulate_fail') {
+      state.simulateFail = !!value;
+      render();
+      return;
+    }
+    var d = state.draft;
+    if (!d) return;
+    d[name] = value;
+    if (name === 'display_name') {
+      state.nameTouched = true;
+      if (!state.titleTouched) d.title = value;
+    }
+    if (name === 'title') state.titleTouched = true;
+    if (name === 'desc') state.descTouched = true;
+    if (name === 'appname') state.appnameTouched = true;
+    if (name === 'target') {
+      var p = normalizeTarget(value);
+      if (p.ok) {
+        if (!state.nameTouched) {
+          d.display_name = defaultName(p);
+          if (!state.titleTouched) d.title = d.display_name;
+        }
+        if (!state.descTouched) d.desc = '通过代理访问 ' + p.value;
+        if (!state.appnameTouched) d.appname = suggestAppname(value);
+      }
+    }
+    render();
+  }
+
+  function nextStep() {
+    var errs = errorsForStep(state.step);
+    if (errs.length) {
+      state.showErrors = true;
+      render();
+      return;
+    }
+    state.showErrors = false;
+    state.step = Math.min(4, state.step + 1);
+    render(true);
+  }
+
+  function prevStep() {
+    state.showErrors = false;
+    state.step = Math.max(1, state.step - 1);
+    render(true);
+  }
+
+  function testTarget() {
+    var p = normalizeTarget(state.draft.target);
+    if (!p.ok) {
+      state.test = { status: 'bad', msg: p.error };
+      render();
+      return;
+    }
+    var expected = p.value;
+    state.test = { status: 'testing' };
+    render();
+    setTimeout(function () {
+      if (!state.draft || normalizeTarget(state.draft.target).value !== expected) return;
+      state.test = { status: 'ok', msg: 'HTTP 200 · 42ms' };
+      render();
+    }, 850);
+  }
+
+  function startJob(install) {
+    var errs = validateDraft(state.draft);
+    if (errs.length) {
+      state.showErrors = true;
+      state.step = errs.some(function (e) { return e.field === 'target' || e.field === 'mode'; }) ? 1 : state.step;
+      render();
+      return;
+    }
+    state.job = {
+      install: !!install,
+      steps: install ? ['校验', '生成 fpk', '安装', '启动', '完成'] : ['校验', '生成 fpk', '完成'],
+      current: 0,
+      status: 'running',
+      fail: !!state.simulateFail,
+      log: [stamp() + ' · 开始：' + state.draft.appname]
+    };
+    render();
+    setTimeout(stepJob, 700);
+  }
+
+  function stamp() {
+    var d = new Date();
+    return [d.getHours(), d.getMinutes(), d.getSeconds()].map(function (x) { return String(x).padStart(2, '0'); }).join(':');
+  }
+
+  function stepJob() {
+    var j = state.job;
+    if (!j || j.status !== 'running') return;
+    var last = j.steps.length - 1;
+    if (j.current >= last) { finishJob(); return; }
+    j.current++;
+    j.log.push(stamp() + ' · ' + j.steps[j.current]);
+    if (j.fail && j.current === (j.install ? 2 : 1)) {
+      j.status = 'failed';
+      j.error = 'appcenter-cli install-local 退出码 1：安装失败（原型模拟）';
+      j.failedStep = j.steps[j.current];
+      j.log.push(stamp() + ' · 失败：' + j.error);
+      render();
+      return;
+    }
+    if (j.current === last) {
+      finishJob();
+      return;
+    }
+    render();
+    setTimeout(stepJob, 700);
+  }
+
+  function finishJob() {
+    var j = state.job;
+    if (!j) return;
+    var d = state.draft;
+    j.status = 'done';
+    j.current = j.steps.length - 1;
+    j.log.push(stamp() + ' · 完成');
+    var status = j.install ? 'installed' : 'generated';
+    var item = {
+      appname: d.appname,
+      display_name: d.display_name,
+      desc: d.desc,
+      target: normalizeTarget(d.target).ok ? normalizeTarget(d.target).value : d.target,
+      mode: d.mode,
+      port: d.port,
+      status: status,
+      version: d.version,
+      title: d.title,
+      ui_type: 'url',
+      all_users: d.all_users,
+      skip_tls: d.skip_tls,
+      updated: '刚刚',
+      error: '',
+      failedStep: ''
+    };
+    var idx = -1;
+    for (var i = 0; i < state.list.length; i++) if (state.list[i].appname === d.appname) idx = i;
+    if (idx >= 0) {
+      state.list[idx] = Object.assign({}, state.list[idx], item);
+    } else {
+      state.list.unshift(item);
+    }
+    state.editingId = d.appname;
+    state.mode = 'edit';
+    state.selected = d.appname;
+    render();
+  }
+
+  function deleteItem(id) {
+    var item = findItem(id);
+    if (!item) return;
+    if (!confirm('删除「' + item.display_name + '」的托管记录？\n原型不会真的卸载飞牛应用。')) return;
+    state.list = state.list.filter(function (x) { return x.appname !== id; });
+    if (state.selected === id) state.selected = state.list.length ? state.list[0].appname : null;
+    if (state.editingId === id) backToList();
+    else render();
+  }
+
+  function copyLog() {
+    var j = state.job;
+    var text = j && j.log ? j.log.join('\n') : '';
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast('日志已复制'); }, function () { toast('复制失败，请手动选择日志'); });
+    } else {
+      toast('日志已准备（原型）');
+    }
+  }
+
+  document.addEventListener('input', function (e) {
+    var el = e.target.closest ? e.target.closest('[data-field]') : null;
+    if (!el) return;
+    var name = el.getAttribute('data-field');
+    if (!name) return;
+    var value = el.type === 'checkbox' ? el.checked : el.value;
+    setField(name, value);
+  });
+
+  document.addEventListener('change', function (e) {
+    var el = e.target.closest ? e.target.closest('[data-field]') : null;
+    if (!el) return;
+    var name = el.getAttribute('data-field');
+    if (!name) return;
+    if (el.type === 'checkbox') setField(name, el.checked);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    if (state.showFields) return;
+    e.preventDefault();
+    cycleVariant(e.key === 'ArrowRight' ? 1 : -1);
+  });
+
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest ? e.target.closest('[data-action]') : null;
+    if (!el) return;
+    var action = el.getAttribute('data-action');
+    var id = el.getAttribute('data-id');
+    if (action !== 'close-fields') e.preventDefault();
+    if (action === 'new') { openNew(); return; }
+    if (action === 'edit') { openEdit(id); return; }
+    if (action === 'select') { state.selected = id; state.screen = 'list'; render(); return; }
+    if (action === 'delete') { deleteItem(id); return; }
+    if (action === 'back') { backToList(); return; }
+    if (action === 'next-step') { nextStep(); return; }
+    if (action === 'prev-step') { prevStep(); return; }
+    if (action === 'mode') { state.draft.mode = el.getAttribute('data-value'); render(); return; }
+    if (action === 'test-target') { testTarget(); return; }
+    if (action === 'toggle-advanced') { state.advanced = !state.advanced; render(); return; }
+    if (action === 'generate') { startJob(true); return; }
+    if (action === 'generate-only') { startJob(false); return; }
+    if (action === 'retry') { if (state.job) startJob(state.job.install); return; }
+    if (action === 'download') { toast('fpk 下载（原型不产生文件）'); return; }
+    if (action === 'copy-log') { copyLog(); return; }
+    if (action === 'open-entry') { toast('打开 ' + entryUrl(findItem(id) || state.draft) + '（原型不跳转）'); return; }
+    if (action === 'clone') { cloneDraft(); return; }
+    if (action === 'fields') { state.showFields = true; render(); return; }
+    if (action === 'close-fields') { state.showFields = false; render(); return; }
+    if (action === 'prev-variant') { cycleVariant(-1); return; }
+    if (action === 'next-variant') { cycleVariant(1); return; }
+    if (action === 'variant') { setVariant(el.getAttribute('data-value')); return; }
+  });
+
+  var initial = 'A';
+  try {
+    var q = new URLSearchParams(location.search).get('variant');
+    if (q && VARIANT_KEYS.indexOf(q.toUpperCase()) >= 0) initial = q.toUpperCase();
+  } catch (e) {}
+  state.variant = initial;
+  state.selected = state.list.length ? state.list[0].appname : null;
+  render(true);
+})();
+</script>
+</body>
+</html>
