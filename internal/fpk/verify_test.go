@@ -9,9 +9,9 @@ import (
 func elf64(machine uint16, interp bool) []byte {
 	b := make([]byte, 64+56)
 	copy(b[:4], []byte{0x7f, 'E', 'L', 'F'})
-	b[4] = 2 // ELFCLASS64
-	b[5] = 1 // ELFDATA2LSB
-	b[6] = 1 // EV_CURRENT
+	b[4] = 2                                   // ELFCLASS64
+	b[5] = 1                                   // ELFDATA2LSB
+	b[6] = 1                                   // EV_CURRENT
 	binary.LittleEndian.PutUint16(b[16:18], 2) // ET_EXEC
 	binary.LittleEndian.PutUint16(b[18:20], machine)
 	binary.LittleEndian.PutUint32(b[20:24], 1)

@@ -17,6 +17,10 @@ import (
 	"github.com/jeefyang/fnos_daili/internal/spec"
 )
 
+// fnOS validates config/privilege against its template shape, including the
+// four-space indentation; a minified object can be rejected at install time.
+const privilegeJSON = "{\n    \"defaults\":\n    {\n        \"run-as\": \"package\"\n    }\n}"
+
 type Assets struct {
 	ProxyBinary []byte
 	Icon64      []byte
@@ -109,10 +113,10 @@ func writeOuter(w io.Writer, s spec.ProxySpec, assets Assets, appTGZ []byte, man
 	if err := write("ICON_256.PNG", 0o644, assets.Icon256); err != nil {
 		return err
 	}
-	if err := write("config/privilege", 0o644, []byte("{\"defaults\":{\"run-as\":\"package\"}}\n")); err != nil {
+	if err := write("config/privilege", 0o644, []byte(privilegeJSON)); err != nil {
 		return err
 	}
-	if err := write("config/resource", 0o644, []byte("{}\n")); err != nil {
+	if err := write("config/resource", 0o644, []byte("{}")); err != nil {
 		return err
 	}
 	if err := write("app.tgz", 0o644, appTGZ); err != nil {

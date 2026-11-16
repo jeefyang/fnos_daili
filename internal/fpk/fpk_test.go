@@ -109,8 +109,11 @@ func TestBuildProxyLayout(t *testing.T) {
 			t.Errorf("missing outer member %q", name)
 		}
 	}
-	if !bytes.Contains(files["config/privilege"], []byte(`"run-as":"package"`)) {
+	if string(files["config/privilege"]) != privilegeJSON {
 		t.Errorf("privilege = %s", files["config/privilege"])
+	}
+	if string(files["config/resource"]) != "{}" {
+		t.Errorf("resource = %s", files["config/resource"])
 	}
 
 	manifest := string(files["manifest"])

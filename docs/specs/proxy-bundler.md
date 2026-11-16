@@ -349,8 +349,17 @@ app/
   config.json
 ```
 
-- `config/privilege`：`{"defaults":{"run-as":"package"}}`。
-- `config/resource`：`{}`。
+- `config/privilege`：内容为 `run-as: package`，但必须按 fnOS 模板写成四空格缩进的多行 JSON，不能写成 minified：
+  ```json
+  {
+      "defaults":
+      {
+          "run-as": "package"
+      }
+  }
+  ```
+  生成器与该文件的逐字节校验都以这个形状为准；社区有 minified 被应用中心拒绝的记录。
+- `config/resource`：`{}`（单行，无尾随换行）。
 - manifest 样例（`appname=proxy.home.9f3a`，`display_name=家里的 Home Assistant`，目标 `http://192.168.1.10:8123`）：
 
 ```ini
@@ -682,7 +691,7 @@ manager 的 CGI 契约相同，socket 换成 `manager.sock`，并把 501 换成�
 
 ### 9.1 生成器
 
-- 纯 Go 实现 tar/gzip，不依赖 `fnpack`；生成后仍可用 `fnpack` 校验（可选）。
+- 纯 Go 实现 tar/gzip，不依赖 `fnpack`；生成后仍可用 `fnpack` 校验（可选）。已实现为 `internal/fpk.BuildProxy`，开发期用 `cmd/build-fpk` 调同一构建器；托管台后续直接复用，不另写打包逻辑。
 - 流程：校验 spec → 建 `build/<uuid>/app/` → 写 config.json（0600）→ 复制图标/二进制 → 打 `app.tgz` → 算 md5 → 写 manifest → 写 cmd/config/wizard → 打外层 fpk（0600）→ 预检 → 移到 `packages/<appname>/<version>-<unix>.fpk`。
 - 构建目录在 `$TRIM_PKGVAR/build/<uuid>/`，成功或失败后删除；不落 `/tmp`。
 - 包保留当前 + 上一版；删除更旧；`last-known-good` 单独指针。
@@ -787,6 +796,7 @@ T2 的“端口 bind 预检”作废：v1 不分配入口端口，manifest 不�
 - `ui/config` key == desktop_applaunchname；
 - checksum == md5(app.tgz)；
 - 权限/大小/图标尺寸；
+- `config/privilege` 与 fnOS 模板逐字节一致；
 - config.json 不含明文口令。
 
 ### 11.3 集成测试

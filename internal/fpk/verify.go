@@ -132,8 +132,11 @@ func Verify(data []byte) (VerifyResult, error) {
 	if err := checkIconPNG("ICON_256.PNG", members["ICON_256.PNG"].data, 256); err != nil {
 		return zero, err
 	}
-	if !bytes.Contains(members["config/privilege"].data, []byte(`"run-as":"package"`)) {
-		return zero, fmt.Errorf("config/privilege must run as package")
+	if string(members["config/privilege"].data) != privilegeJSON {
+		return zero, fmt.Errorf("config/privilege must match the fnOS template exactly")
+	}
+	if string(members["config/resource"].data) != "{}" {
+		return zero, fmt.Errorf("config/resource must be {}")
 	}
 	for name, want := range map[string]int64{
 		"manifest": 0o644, "ICON.PNG": 0o644, "ICON_256.PNG": 0o644,
