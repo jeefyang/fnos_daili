@@ -1,0 +1,80 @@
+#!/bin/bash
+
+LOG_FILE="${TRIM_PKGVAR}/info.log"
+PID_FILE="${TRIM_PKGVAR}/probe.pid"
+SOCK="${TRIM_APPDEST}/app.sock"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${LOG_FILE}"
+}
+
+status() {
+    if [ -f "${PID_FILE}" ]; then
+        pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+        if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+            return 0
+        fi
+        rm -f "${PID_FILE}"
+    fi
+    return 1
+}
+
+start_process() {
+    if status; then
+        return 0
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+        log_msg "python3 not found"
+        return 1
+    fi
+    rm -f "${SOCK}" "${PID_FILE}"
+    log_msg "Starting gateway probe on ${SOCK}"
+    nohup python3 "${TRIM_APPDEST}/probe.py" "${SOCK}" >> "${LOG_FILE}" 2>&1 &
+    printf "%s" "$!" > "${PID_FILE}"
+    i=0
+    while [ "${i}" -lt 50 ]; do
+        if [ -S "${SOCK}" ]; then
+            return 0
+        fi
+        sleep 0.1
+        i=$((i + 1))
+    done
+    log_msg "socket was not created within 5s"
+    return 1
+}
+
+stop_process() {
+    log_msg "Stopping gateway probe"
+    if [ -r "${PID_FILE}" ]; then
+        pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+        if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+            kill -TERM "${pid}" >> "${LOG_FILE}" 2>&1
+            i=0
+            while kill -0 "${pid}" 2>/dev/null && [ "${i}" -lt 20 ]; do
+                sleep 0.1
+                i=$((i + 1))
+            done
+            if kill -0 "${pid}" 2>/dev/null; then
+                kill -KILL "${pid}" 2>/dev/null || true
+            fi
+        fi
+        rm -f "${PID_FILE}"
+    fi
+    rm -f "${SOCK}"
+    return 0
+}
+
+case "$1" in
+start)
+    start_process
+    ;;
+stop)
+    stop_process
+    ;;
+status)
+    if status; then exit 0; else exit 3; fi
+    ;;
+*)
+    exit 1
+    ;;
+esac
