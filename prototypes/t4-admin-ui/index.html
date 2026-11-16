@@ -759,7 +759,7 @@
       '<tr><td>端口</td><td>自动</td><td>20000–29999 自动分配，只读展示；不写 config.json。</td></tr>' +
       '<tr><td>图标</td><td>否</td><td>v1 内置默认；不支持上传。</td></tr>' +
       '<tr><td>隐藏字段</td><td>—</td><td>file_types、no_display、control.*、install_volume、逐应用超时 / 认证：v1 不暴露。</td></tr>' +
-      '<tr><td>列表</td><td>—</td><td>名称、appname、目标、模式、端口、状态、入口、操作；v1 不做实时健康检查。</td></tr>' +
+      '<tr><td>列表</td><td>—</td><td>名称、appname、目标、模式、端口、最近安装（时间 + 成功/失败/原因）、操作；v1 不做实时健康检查。</td></tr>' +
       '<tr><td>编辑</td><td>—</td><td>appname 锁定；保存 = 重新生成并重装；可另存为新应用。</td></tr>' +
       '</tbody></table>' +
       '<div class="close-row"><button type="button" class="btn" data-action="close-fields">关闭</button></div>' +
@@ -797,13 +797,14 @@
         '<header class="a-header"><div class="a-brand"><span class="a-brand-mark">↗</span><div><strong>代理打包器</strong><small>把任意 ip:port 装成飞牛应用</small></div></div>' +
         '<div class="a-actions">' + fieldsButton() + '<button type="button" class="btn primary" data-action="new">+ 新建代理</button></div></header>' +
         '<section class="a-card"><div class="a-list-head"><div><h2>已管理的代理</h2><p>' + state.list.length + ' 个目标 · 端口 20000–29999 自动分配</p></div></div>' +
-        '<table class="a-table"><thead><tr><th>应用</th><th>目标</th><th>模式</th><th>端口</th><th>状态</th><th></th></tr></thead><tbody>' +
+        '<table class="a-table"><thead><tr><th>应用</th><th>目标</th><th>模式</th><th>端口</th><th>最近安装</th><th></th></tr></thead><tbody>' +
         (state.list.length ? state.list.map(function (item) {
           return '<tr><td><div class="a-app">' + icon(34) + '<div><div class="t">' + esc(item.display_name) + '</div><div class="s mono">' + esc(item.appname) + '</div></div></div></td>' +
             '<td class="a-target mono">' + esc(item.target) + '</td>' +
             '<td>' + esc(modeLabel(item.mode)) + '</td>' +
             '<td class="a-port">' + esc(item.port) + '</td>' +
-            '<td><span class="status ' + esc(item.status) + '">' + esc(statusLabel(item.status)) + '</span></td>' +
+            '<td><span class="status ' + esc(item.status) + '">' + esc(statusLabel(item.status)) + '</span>' +
+            '<div class="s">' + esc(item.updated || '—') + (item.status === 'failed' && item.error ? ' · ' + esc(item.error) : '') + '</div></td>' +
             '<td>' + listActions(item) + '</td></tr>';
         }).join('') : '<tr><td colspan="6"><div class="empty">还没有代理。点右上角新建一个。</div></td></tr>') +
         '</tbody></table></section></div>';
@@ -864,7 +865,7 @@
       '<div class="kv"><div class="k">端口</div><div class="v mono">' + esc(item.port) + '</div></div>' +
       '<div class="kv"><div class="k">入口</div><div class="v mono">' + esc(entryUrl(item)) + '</div></div>' +
       '<div class="kv"><div class="k">allUsers</div><div class="v">' + (item.all_users ? '所有用户可见' : '仅管理员') + '</div></div>' +
-      '<div class="kv"><div class="k">最近更新</div><div class="v">' + esc(item.updated || '—') + '</div></div>' +
+      '<div class="kv"><div class="k">最近安装</div><div class="v">' + esc(item.updated || '—') + ' · ' + esc(statusLabel(item.status)) + '</div></div>' +
       '</div>' +
       '<div class="detail-actions"><button type="button" class="btn primary" data-action="edit" data-id="' + esc(item.appname) + '">编辑</button>' +
       '<button type="button" class="btn" data-action="open-entry" data-id="' + esc(item.appname) + '" ' + (item.status === 'installed' ? '' : 'disabled') + '>打开入口</button>' +
@@ -907,11 +908,12 @@
 
   function cList() {
     return '<section class="c-ledger"><div class="c-ledger-head"><strong>已管理的代理</strong><span style="font-size:11px;color:#8a8173">' + state.list.length + ' 个目标 · 端口 20000–29999</span></div>' +
-      '<table class="c-table"><thead><tr><th>应用</th><th>目标</th><th>模式</th><th>端口</th><th>状态</th><th></th></tr></thead><tbody>' +
+      '<table class="c-table"><thead><tr><th>应用</th><th>目标</th><th>模式</th><th>端口</th><th>最近安装</th><th></th></tr></thead><tbody>' +
       (state.list.length ? state.list.map(function (item) {
         return '<tr><td><div class="c-app">' + icon(28) + '<div><div class="t">' + esc(item.display_name) + '</div><div class="s mono">' + esc(item.appname) + '</div></div></div></td>' +
           '<td class="mono">' + esc(item.target) + '</td><td>' + esc(modeLabel(item.mode)) + '</td><td class="mono">' + esc(item.port) + '</td>' +
-          '<td><span class="status ' + esc(item.status) + '">' + esc(statusLabel(item.status)) + '</span></td>' +
+          '<td><span class="status ' + esc(item.status) + '">' + esc(statusLabel(item.status)) + '</span>' +
+          '<div class="s">' + esc(item.updated || '—') + (item.status === 'failed' && item.error ? ' · ' + esc(item.error) : '') + '</div></td>' +
           '<td>' + listActions(item) + '</td></tr>';
       }).join('') : '<tr><td colspan="6"><div class="empty">还没有代理。</div></td></tr>') +
       '</tbody></table></section>';
