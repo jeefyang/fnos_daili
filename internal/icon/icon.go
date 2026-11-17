@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"image"
 	stddraw "image/draw"
+	_ "image/gif"
 	_ "image/jpeg"
 	"image/png"
 
+	_ "golang.org/x/image/bmp"
 	xdraw "golang.org/x/image/draw"
+	_ "golang.org/x/image/webp"
 )
 
 const (
@@ -121,15 +124,15 @@ func decodeImage(data []byte, allowICO bool) (image.Image, int, int, error) {
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		if allowICO {
-			return nil, 0, 0, fmt.Errorf("not a PNG, JPEG, or ICO image: %w", err)
+			return nil, 0, 0, fmt.Errorf("not a PNG, JPEG, GIF, BMP, WebP, or ICO image: %w", err)
 		}
-		return nil, 0, 0, fmt.Errorf("not a PNG or JPEG image: %w", err)
+		return nil, 0, 0, fmt.Errorf("not a PNG, JPEG, GIF, BMP, or WebP image: %w", err)
 	}
-	if format != "png" && format != "jpeg" {
+	if !supportedFormat(format) {
 		if allowICO {
-			return nil, 0, 0, fmt.Errorf("unsupported image format %q; use PNG, JPEG, or ICO", format)
+			return nil, 0, 0, fmt.Errorf("unsupported image format %q; use PNG, JPEG, GIF, BMP, WebP, or ICO", format)
 		}
-		return nil, 0, 0, fmt.Errorf("unsupported image format %q; use PNG or JPEG", format)
+		return nil, 0, 0, fmt.Errorf("unsupported image format %q; use PNG, JPEG, GIF, BMP, or WebP", format)
 	}
 	if int64(cfg.Width)*int64(cfg.Height) > MaxPixels {
 		return nil, 0, 0, fmt.Errorf("image has too many pixels (max %d)", MaxPixels)
@@ -139,6 +142,16 @@ func decodeImage(data []byte, allowICO bool) (image.Image, int, int, error) {
 		return nil, 0, 0, fmt.Errorf("decode image: %w", err)
 	}
 	return src, cfg.Width, cfg.Height, nil
+}
+
+// supportedFormat lists the still-image formats the standard library and
+// golang.org/x/image register at init; every one of them is converted to PNG.
+func supportedFormat(format string) bool {
+	switch format {
+	case "png", "jpeg", "gif", "bmp", "webp":
+		return true
+	}
+	return false
 }
 
 func encodePNG(img image.Image) ([]byte, error) {

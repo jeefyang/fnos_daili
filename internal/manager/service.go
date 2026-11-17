@@ -42,6 +42,9 @@ type Config struct {
 	Logger      *log.Logger
 	Now         func() time.Time
 	PollEvery   time.Duration
+	// IconLibraryBase overrides the public icon library endpoint; empty means
+	// iconlib.DefaultBase. Tests point it at an httptest server.
+	IconLibraryBase string
 }
 
 // Service owns state, operations, and the CLI client.

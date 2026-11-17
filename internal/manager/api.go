@@ -22,6 +22,7 @@ import (
 	"github.com/jeefyang/fnos_daili/internal/dnsx"
 	"github.com/jeefyang/fnos_daili/internal/favicon"
 	"github.com/jeefyang/fnos_daili/internal/guard"
+	"github.com/jeefyang/fnos_daili/internal/iconlib"
 	"github.com/jeefyang/fnos_daili/internal/spec"
 	"github.com/jeefyang/fnos_daili/internal/state"
 	"github.com/jeefyang/fnos_daili/internal/target"
@@ -48,6 +49,7 @@ func (s *Service) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/targets/{id}/test-target", s.handleTestTarget)
 	mux.HandleFunc("POST /api/test-target", s.handleTestTarget)
 	mux.HandleFunc("POST /api/favicon", s.handleFavicon)
+	mux.HandleFunc("POST /api/icon-library", s.handleIconLibrary)
 	mux.HandleFunc("GET /api/appnames/check", s.handleAppNameCheck)
 	mux.HandleFunc("GET /api/volumes", s.handleVolumes)
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
@@ -541,6 +543,124 @@ func (s *Service) handleFavicon(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"icon_data": "data:image/png;base64," + base64.StdEncoding.EncodeToString(set.Icon256),
 	})
+}
+
+// handleIconLibrary looks the target's icon up in a public icon library, the
+// fallback watchcow uses when a site only ships a tiny favicon.
+func (s *Service) handleIconLibrary(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		AppName     string `json:"appname"`
+		DisplayName string `json:"display_name"`
+		DNSServer   string `json:"dns_server"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	names := s.iconLibraryNames(body.AppName, body.DisplayName)
+	if len(names) == 0 {
+		writeError(w, http.StatusBadRequest, "validation_failed", "appname or display_name is required")
+		return
+	}
+	dnsServer := strings.TrimSpace(body.DNSServer)
+	if dnsServer == "" {
+		dnsServer = s.Settings().DNSServer
+	}
+	if dnsServer != "" {
+		if err := dnsx.Validate(dnsServer); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+	}
+	base := strings.TrimSpace(s.cfg.IconLibraryBase)
+	if base == "" {
+		base = iconlib.DefaultBase
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	// The operator chose this base, so a loopback mirror is intentional; an
+	// ordinary public library still goes through the address guard.
+	g := &guard.Guard{AllowLoopback: isLoopbackOrigin(base)}
+	if dnsServer != "" {
+		g.Resolver = dnsx.New(dnsServer)
+	}
+	set, slug, err := iconlib.Fetch(ctx, outboundClient(g, false), base, names)
+	if err != nil {
+		status, code := http.StatusBadGateway, "icon_library_failed"
+		if errors.Is(err, iconlib.ErrNotFound) {
+			status, code = http.StatusNotFound, "icon_library_not_found"
+		}
+		msg := shortError(err)
+		s.logger.Printf("icon library %v: %s", names, msg)
+		writeError(w, status, code, msg)
+		return
+	}
+	s.logger.Printf("icon library: %v matched %q", names, slug)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"icon_data": "data:image/png;base64," + base64.StdEncoding.EncodeToString(set.Icon256),
+		"slug":      slug,
+	})
+}
+
+// iconLibraryNames builds the lookup candidates: display name first, then the
+// appname with and without the configured global affixes.
+func (s *Service) iconLibraryNames(appname, display string) []string {
+	names := make([]string, 0, 4)
+	add := func(v string) {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			names = append(names, v)
+		}
+	}
+	add(display)
+	add(appname)
+	settings := s.Settings()
+	trimmed := strings.TrimPrefix(strings.TrimSuffix(appname, settings.AppNameSuffix), settings.AppNamePrefix)
+	if trimmed != appname {
+		add(trimmed)
+		add(strings.NewReplacer(".", " ", "_", "-").Replace(trimmed))
+	}
+	return names
+}
+
+// isLoopbackOrigin reports whether rawURL points at the local machine.
+func isLoopbackOrigin(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// outboundClient builds the HTTP client used for operator-triggered outbound
+// fetches: it dials through the guard, honours the pinned DNS server, and
+// never follows more than five redirects.
+func outboundClient(g *guard.Guard, skipTLS bool) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 nil,
+			DialContext:           g.DialContext,
+			ForceAttemptHTTP2:     true,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+			TLSClientConfig:       &tls.Config{InsecureSkipVerify: skipTLS}, // #nosec G402 - explicit opt-in.
+		},
+		Timeout: 15 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return errors.New("too many redirects")
+			}
+			return nil
+		},
+	}
 }
 
 // targetCheckError turns a guard failure into a stable category plus a short,

@@ -20,6 +20,7 @@
     iconData: '',
     iconRemove: false,
     iconFetched: false,
+    iconLibrary: false,
     settings: { appname_prefix: 'proxy.', appname_suffix: '' },
     network: { known: false, lan: null, client_ip: '' }
   };
@@ -428,8 +429,10 @@
     if (!fileInput || !fileInput.files || !fileInput.files.length) return;
     var file = fileInput.files[0];
     errBox.textContent = '';
-    if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
-      errBox.textContent = '只支持 PNG 或 JPEG 图片';
+    var name = String(file.name || '').toLowerCase();
+    var knownExt = /.(png|jpe?g|webp|bmp|gif|ico)$/.test(name);
+    if (!knownExt && String(file.type || '').indexOf('image/') !== 0) {
+      errBox.textContent = '只支持 PNG/JPEG/WebP/BMP/GIF/ICO 图片';
       fileInput.value = '';
       return;
     }
@@ -443,6 +446,7 @@
       state.iconData = String(reader.result || '');
       state.iconRemove = false;
       state.iconFetched = false;
+      state.iconLibrary = false;
       setIconPreview(state.iconData);
       errBox.textContent = '';
     };
@@ -477,6 +481,7 @@
       state.iconData = res.icon_data;
       state.iconRemove = false;
       state.iconFetched = true;
+      state.iconLibrary = false;
       setIconPreview(state.iconData);
       box.textContent = '';
     }).catch(function (err) {
@@ -487,9 +492,48 @@
     });
   }
 
+  // Looks the icon up in dashboard-icons, the fallback watchcow uses when a
+  // site only ships a tiny favicon.
+  function onIconLibrary() {
+    var box = $('iconError');
+    var btn = $('iconLibrary');
+    var appname = $('appname').value.trim();
+    var display = $('display_name').value.trim();
+    box.textContent = '';
+    if (!appname && !display) {
+      box.textContent = '先在第 2 步填写显示名称或应用标识';
+      return;
+    }
+    btn.disabled = true;
+    var label = btn.textContent;
+    btn.textContent = '查找中…';
+    api('/api/icon-library', {
+      method: 'POST',
+      body: {
+        appname: appname,
+        display_name: display,
+        dns_server: $('dns_server').value.trim()
+      }
+    }).then(function (res) {
+      if (!res || !res.icon_data) throw new Error('图标库里没有匹配的图标');
+      state.iconData = res.icon_data;
+      state.iconRemove = false;
+      state.iconFetched = false;
+      state.iconLibrary = true;
+      setIconPreview(state.iconData);
+      box.textContent = res.slug ? '图标库命中：' + res.slug : '';
+    }).catch(function (err) {
+      box.textContent = '图标库里没找到：' + msgOf(err);
+    }).then(function () {
+      btn.disabled = false;
+      btn.textContent = label;
+    });
+  }
+
   function onIconReset() {
     state.iconData = '';
     state.iconFetched = false;
+    state.iconLibrary = false;
     state.iconRemove = !!state.editId && state.editHasIcon;
     $('iconFile').value = '';
     $('iconError').textContent = '';
@@ -509,6 +553,7 @@
     state.iconData = '';
     state.iconRemove = false;
     state.iconFetched = false;
+    state.iconLibrary = false;
     $('iconFile').value = '';
     $('iconError').textContent = '';
     setIconPreview(defaultIconURL());
@@ -790,7 +835,7 @@
       ['appname', d.appname],
       ['入口', fnConnectHost() ? (d.appname ? entryURL(d.appname, state.editPort) : '生成时按 appname 生成应用子域') : (state.editPort ? entryURL(d.appname, state.editPort) : '生成时自动分配端口')],
       ['安装卷', '卷 ' + d.install_volume],
-      ['图标', state.iconFetched ? '从目标站点抓取（待保存）' : (state.iconData ? '自定义上传（待保存）' : (state.iconRemove ? '恢复默认' : (state.editHasIcon ? '当前为自定义' : '默认')))],
+      ['图标', state.iconFetched ? '从目标站点抓取（待保存）' : (state.iconLibrary ? '从图标库获取（待保存）' : (state.iconData ? '自定义上传（待保存）' : (state.iconRemove ? '恢复默认' : (state.editHasIcon ? '当前为自定义' : '默认'))))],
       ['DNS 服务器', d.dns_server || '系统默认'],
       ['Basic Auth', d.basic_auth ? ('开启 · ' + d.basic_auth.username) : '关闭'],
       ['跳过证书校验', d.skip_tls_verify ? '是' : '否'],
@@ -1009,6 +1054,7 @@
     $('iconFile').addEventListener('change', onIconPick);
     $('iconReset').addEventListener('click', onIconReset);
     $('iconFetch').addEventListener('click', onIconFetch);
+    $('iconLibrary').addEventListener('click', onIconLibrary);
     $('nextBtn').addEventListener('click', next);
     // The rail lets you jump back to an earlier step (for example to change the
     // target of an existing app); forward navigation always re-validates.

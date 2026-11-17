@@ -101,11 +101,12 @@
             <div class="icon-row">
               <img id="iconPreview" class="icon-preview" alt="图标预览">
               <div class="icon-actions">
-                <input id="iconFile" type="file" accept="image/png,image/jpeg" hidden>
+                <input id="iconFile" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/gif,image/x-icon,image/vnd.microsoft.icon,.ico,.webp,.bmp" hidden>
                 <button id="iconPick" class="btn sm" type="button">选择图片</button>
                 <button id="iconFetch" class="btn sm" type="button">从站点获取</button>
+                <button id="iconLibrary" class="btn sm" type="button">从图标库获取</button>
                 <button id="iconReset" class="btn sm ghost" type="button">恢复默认</button>
-                <div class="help">PNG/JPEG/ICO，建议正方形 256×256 以上，最大 2MB；“从站点获取”会读取目标页的图标声明并回退到 /favicon.ico，只在点按时访问目标。保存时自动裁成 256 与 64 两档。</div>
+                <div class="help">PNG/JPEG/WebP/BMP/GIF/ICO，统一转成 PNG；建议正方形 256×256 以上，最大 2MB。“从站点获取”会先读目标的 web app manifest 图标，再读页面图标声明，最后回退 /favicon.ico；站点图标太小时可试“从图标库获取”（按显示名称查 dashboard-icons）。保存时自动裁成 256 与 64 两档。</div>
                 <div id="iconError" class="error"></div>
               </div>
             </div>

@@ -31,7 +31,7 @@
 - 非 HTTP(S) 协议（SSH/RDP/裸 TCP）。
 - 统一网关 `/app/<appname>` 入口（未验证可用，不再是产品入口）。
 - HTML 响应体重写、绝对 URL 改写、CSP 改写。
-- 自动抓取 favicon 只在用户点按“从站点获取”时出站一次；上传仍只收 PNG/JPEG，缺省用内置默认 64/256 图标。
+- 自动抓取 favicon 只在用户点按“从站点获取”时出站一次，“从图标库获取”同样只在点按时出站；上传接受 PNG/JPEG/WebP/BMP/GIF/ICO 并统一转成 PNG，缺省用内置默认 64/256 图标。
 - 批量导入导出、模板、多目标一次生成。
 - 实时健康检查、访问统计、自动失败重启。
 - 托管台自身的 WebSocket（CGI 不支持 Upgrade）；代理应用在独立端口上支持 WebSocket。
@@ -136,9 +136,9 @@ type BasicAuth struct {
 | `allow_loopback` | 仅 reverse；打开只放行回环，不放行链路本地/多播/端口拒绝 |
 | `dns_server` | 仅 reverse；空串 = 用系统解析器；非空必须是 IP 字面量（端口固定 53，不接受 `host:port` 或主机名）；该解析器同时用于目标拦截的解析与出站拨号，TLS SNI / 证书校验仍用原主机名 |
 
-图标不属于 `ProxySpec`，而是 target 的可选附件：API 输入用 `icon_data`（base64 data URL，PNG/JPEG，≤2MB，≥64×64，≤16M 像素）或 `remove_icon`（二者互斥），输出用 `has_icon`。托管台在保存时把图统一裁成 256 与 64 两档 PNG，存 state 的 `custom_icon_64` / `custom_icon_256`；生成包时替换内置图标。
+图标不属于 `ProxySpec`，而是 target 的可选附件：API 输入用 `icon_data`（base64 data URL，PNG/JPEG/WebP/BMP/GIF/ICO，≤2MB，≥64×64，≤16M 像素；非 PNG 一律解码后转 PNG）或 `remove_icon`（二者互斥），输出用 `has_icon`。托管台在保存时把图统一裁成 256 与 64 两档 PNG，存 state 的 `custom_icon_64` / `custom_icon_256`；生成包时替换内置图标。
 
-`POST /api/favicon` 供“从站点获取”按钮使用：输入 `target_url`、`dns_server`、`skip_tls_verify`、`allow_loopback`（后三者缺省取表单/全局设置），托管台用与代理运行时相同的解析器、目标拦截和 TLS 策略访问目标，先读页面里的 web app manifest（`<link rel=manifest>`，取最大的 `icons[].src`），再读 `<link rel=icon|apple-touch-icon>`（按 `sizes` 从大到小），再试 `/apple-touch-icon.png`、`/apple-touch-icon-precomposed.png`，最后回退 `/favicon.ico`，用 `icon.NormalizeFavicon` 归一化。favicon 解码接受 PNG/JPEG/ICO：ICO 取最大帧，支持 PNG 帧与 32/24/8/4/1 位 BMP 帧（含 AND mask 透明），源图最小 16×16；小于 256 的源图用 Mitchell 三次核放大（无过冲，不留亮边与台阶），大于 256 用 CatmullRom 缩小，缩放后把 alpha 1..7 与 248..254 钳到 0/255。成功返回 `{"icon_data": "data:image/png;base64,..."}`（256 档），前端把它当作待保存的 `icon_data`；找不到图标返回 404 `favicon_not_found`，网络/解析失败返回 502 `favicon_failed`。
+`POST /api/favicon` 供“从站点获取”按钮使用：输入 `target_url`、`dns_server`、`skip_tls_verify`、`allow_loopback`（后三者缺省取表单/全局设置），托管台用与代理运行时相同的解析器、目标拦截和 TLS 策略访问目标，先读页面里的 web app manifest（`<link rel=manifest>`，取最大的 `icons[].src`），再读 `<link rel=icon|apple-touch-icon>`（按 `sizes` 从大到小），再试 `/apple-touch-icon.png`、`/apple-touch-icon-precomposed.png`，最后回退 `/favicon.ico`，用 `icon.NormalizeFavicon` 归一化。favicon 解码接受 PNG/JPEG/GIF/BMP/WebP/ICO：ICO 取最大帧，支持 PNG 帧与 32/24/8/4/1 位 BMP 帧（含 AND mask 透明），源图最小 16×16；小于 256 的源图用 Mitchell 三次核放大（无过冲，不留亮边与台阶），大于 256 用 CatmullRom 缩小，缩放后把 alpha 1..7 与 248..254 钳到 0/255。成功返回 `{"icon_data": "data:image/png;base64,..."}`（256 档），前端把它当作待保存的 `icon_data`；找不到图标返回 404 `favicon_not_found`，网络/解析失败返回 502 `favicon_failed`。
 
 ### 4.2 目标规范化
 
@@ -666,6 +666,7 @@ esac
 | GET | `/api/targets/{id}/log?lines=200` | 返回脱敏后的最近日志 |
 | POST | `/api/targets/{id}/test-target` | 测试连通性；不阻断保存 |
 | POST | `/api/favicon` | 按需抓取目标的站点图标；返回 256 档 `icon_data`（data URL） |
+| POST | `/api/icon-library` | 按显示名称/appname 在 dashboard-icons 查图标；返回 `{icon_data, slug}` |
 | GET | `/api/appnames/check?appname=` | `{ok, reason}`；查 state + list |
 | GET | `/api/volumes` | `appcenter-cli default-volume` + 常见卷 |
 | GET | `/api/settings` | 全局设置 `{appname_prefix, appname_suffix, dns_server}` |
@@ -678,6 +679,7 @@ esac
 - `network` 从 `X-Daili-Client-IP`（CGI shim 写入）→ `X-Forwarded-For` → `X-Real-IP` → `RemoteAddr` 取第一个合法 IP；私网/回环/链路本地为 `lan=true`，公网为 `false`，取不到为 null。仅用于入口提示，不参与鉴权。
 - `test-target` 用同一目标拦截；请求体可带 `dns_server`（该目标表单里的值），缺省回退全局设置；返回 `{reachable, status, elapsed_ms, error, detail}`；`error` 是稳定类别（`dns_timeout`、`dns_failure`、`connect_failed`、`loopback`、`port` 等），`detail` 是截断到 160 字节、去掉换行的底层错误，只用于排障，不含口令与请求头。测试超时 10s，掩码直连模式跳过目标拦截。
 - `appnames/check` 规则：正则、保留名、state 冲突、`appcenter-cli list` 冲突。
+- `icon-library` 只在用户点按时执行：body `{appname?, display_name?, dns_server?}`，候选按 display_name、appname、去掉全局前后缀的 appname 依次归一化成 slug（小写、非字母数字折叠成单个 `-`），逐个请求 `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/<slug>.png`（可用 `Config.IconLibraryBase` 覆盖），全程 15s、单个图标 ≤2MB、走固定 DNS 与地址拦截（库地址本身是回环时放行）；命中返回 `{icon_data, slug}`，全不命中 404 `icon_library_not_found`，网络/解码失败 502 `icon_library_failed`。
 - `favicon` 只在用户点按时执行：body `{target_url, dns_server?, skip_tls_verify?, allow_loopback?}`；走同一目标拦截与 DNS 设置，页面最多读 256KiB、单个图标最多 2MiB、总超时 10s、最多 5 跳重定向（可跨源，每跳都过目标拦截与固定 DNS）；先读 web app manifest 的 `icons[]`（最大者优先），再读 `<link rel=icon|apple-touch-icon>`（按声明尺寸从大到小），再试 `/apple-touch-icon.png` 与 `/apple-touch-icon-precomposed.png`，最后试 `/favicon.ico`；manifest 与页面各限 256KiB，manifest 里的 svg 图标跳过；错误文本会去掉 URL 的 query，不把站点 token 写进日志；成功 `{icon_data}`，无图标 404 `favicon_not_found`，网络/解析失败 502 `favicon_failed`。
 - 图标接口只返回 state 里的 PNG 字节；`size=64` 取 64 档，缺省 256 档；`Cache-Control: no-store`，避免换图后浏览器继续用旧图。
 - 创建/更新请求体上限 8MiB，容纳 2MiB 图片的 base64 与 JSON 开销。
@@ -765,7 +767,7 @@ T2 的“端口 bind 预检”恢复：代理入口使用独立端口，分配�
 ### 10.1 四步向导
 
 1. **目标**：target_url 输入；test-target 按钮（非阻断）；格式错误才禁用下一步；反代模式显示“目标拦截”提示。
-2. **应用信息**：display_name、appname（编辑时锁定在应用信息页；目标地址在第 1 步可直接改。预填 `全局前缀 + slug + 全局后缀 + "." + 4hex`，默认前缀 `proxy.`；可改，异步 check）、description、图标（上传 PNG/JPEG，≤2MB，≥64×64；或“从站点获取”抓取目标 favicon，ICO 也接受、16×16 起；预览 64 档；可恢复默认；编辑时显示当前自定义图标）、version（高级折叠，默认 1.0.0）。新建与编辑用同一个向导，但入口分开：新建从空白开始并停在第 1 步；编辑回填已有 target 后也停在第 1 步（目标可二次编辑），appname 在应用信息页锁定，第 1 步给出“保存后会重新生成并重装，appname 与入口端口不变”的提示；左侧步骤栏可回到已走过的步骤，向前仍逐步骤校验。不再有“新建/编辑”页签。
+2. **应用信息**：display_name、appname（编辑时锁定在应用信息页；目标地址在第 1 步可直接改。预填 `全局前缀 + slug + 全局后缀 + "." + 4hex`，默认前缀 `proxy.`；可改，异步 check）、description、图标（上传 PNG/JPEG/WebP/BMP/GIF/ICO，统一转 PNG，≤2MB，≥64×64；或“从站点获取”抓取目标图标，ICO 也接受、16×16 起；或“从图标库获取”按名称查 dashboard-icons；预览 64 档；可恢复默认；编辑时显示当前自定义图标）、version（高级折叠，默认 1.0.0）。新建与编辑用同一个向导，但入口分开：新建从空白开始并停在第 1 步；编辑回填已有 target 后也停在第 1 步（目标可二次编辑），appname 在应用信息页锁定，第 1 步给出“保存后会重新生成并重装，appname 与入口端口不变”的提示；左侧步骤栏可回到已走过的步骤，向前仍逐步骤校验。不再有“新建/编辑”页签。
 3. **入口与高级**：mode（reverse/direct）、ui_type（url/iframe）、all_users（默认 false）、no_display、entry_title、install_volume、skip_tls_verify（仅 https+reverse）、allow_loopback（仅 reverse）、dns_server（仅 reverse；新建时预填全局设置，留空用系统解析器）、Basic Auth（开关 + 用户名/密码，仅 reverse）；端口只读展示（新建时“生成时自动分配”，编辑时显示已分配端口）。
 4. **确认与生成**：摘要含图标来源（自定义上传/从站点抓取/默认）、DNS 服务器（系统默认或指定 IP）、入口端口与最终 URL；生成按钮；进度 5 步（校验 → 生成包 → 安装 → 启动 → 完成）；失败停在对应步骤，提供下载 fpk、查看日志、重试；成功后 toast 提示并自动回到列表。
 
