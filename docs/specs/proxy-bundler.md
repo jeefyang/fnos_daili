@@ -684,7 +684,10 @@ esac
 - 批量导入的 JSON 形状：顶层是数组，或 `{"targets":[...]}`；每个对象的字段与 `POST /api/targets` 请求体一致（`target_url` 必填），示例见 `docs/examples/import-targets.json`。`text` 优先于 `targets`。
 - 预检逐条跑同一套 `spec.NormalizeProxySpec`；appname 为空时按全局前缀/后缀 + display_name（或目标主机名）生成 `slug`，最多加 64 次数字后缀；与 state 或 `appcenter-cli list` 冲突、文件内重复、字段非法的行标 `skip` 并给出原因，其余标 `create`。预检不写任何东西。
 - 执行时 `install=true`：整个批次持有全局 CLI 锁（§9.6），逐条先探测目标可达（reverse 模式，direct 跳过），不可达的保持 `draft` 并记失败原因，其余继续安装并轮询到 `running`；单条失败不中断后续条目，最终 `status=done`，`failed` 计数与每条的 `error` 可供前端展示。`install=false` 只建 draft，批次立即 `done`。
-- 导入不改动任何已有 target 的 appname、端口与已装状态；冲突行只跳过，不改名不覆盖。
+- 导入不改动托管台已管理的 target：appname 已在 state 里就跳过该行（要改请直接编辑那条），不改名也不覆盖。
+- 系统里已装、但 state 里没有同名应用时，该行动作是「接管（adopt）」：导入后先把那个应用卸载，再用备份重新生成安装包装上，等价于一次重装。这是给“托管台重装了、代理应用还活着”的还原场景准备的；预览里逐行标出，不会静默接管。
+- 端口：文件的 `port` 字段只在导入时用作偏好。托管台先试着绑这个端口，空闲就用它（还原后入口 URL 不变），被占用就在 20000–29999 里重新分配；超出范围的 port 直接判该行不合法。
+- 设置：全量导出带 `settings` 块（appname 前后缀、默认 DNS）。导入时只有请求里 `restore_settings: true` 才应用它，且先生效再规划 appname；默认不动当前设置。
 - 图标字段 `icon`：base64 data URL，或 NAS 上的绝对路径（`file://` 前缀可省）；相对路径直接拒绝，文件超过 2MiB 拒绝，仍走同一套 `icon.Normalize`（PNG/JPEG/WebP/BMP/GIF/ICO）。图标不合法只跳过该行，原因写进预览。
 - 导出文件 `{schema:1, exported_at, targets:[...]}`，每条的字段与导入接受的一致；默认把自定义图标以 256 档 PNG 的 data URL 写进 `icon`，并标 `icon_source: custom|default`；`basic_auth` 导出 `{username, password_hash}`（bcrypt），因此导回后口令保持原样，导出文件本身含口令哈希，按敏感文件保管。`port`/`state` 只作参考，导入时端口一律重新分配。
 - `settings` 的 prefix/suffix 各 ≤16 字节、合计 ≤24，只允许 ASCII 字母数字 `._-`；prefix 非空时首字符必须是字母或数字；用 `prefix+"app"+suffix` 过一遍 appname 校验。保存只影响新建时建议，已创建的 appname 已锁定。`dns_server` 是新建应用时预填的默认解析器（空 = 系统），只影响之后新建或重新保存的 target，不自动重装已装应用。
@@ -795,7 +798,8 @@ T2 的“端口 bind 预检”恢复：代理入口使用独立端口，分配�
   - 当前域名后缀属于 `fnos.net` / `5ddd.com` / `trzznas.com`（FN Connect 公网访问）时，入口为 `https://<fnDomain>.<当前域名>/`，其中 `fnDomain` = 入口键（`desktop_applaunchname`）小写、点换成连字符，默认入口名 `Application` 省略；本项目入口键固定 `<appname>.main`，故为 `<appname 点→连字符>-main`。此时不再提示端口不可达，改为提示“需在 FN Connect 里发布该应用”。
   - 其余情况（局域网 IP、自定义域名）仍为 `http://<host>:<port>/`，`/api/network` 判定为外网时显示“外网访问，端口通常不可达”，点击入口先弹提示（复制地址 / 仍然尝试）。
 - FN Connect 子域规则属于从官方前端行为与实例归纳的推断，命中不到时退化为端口 URL，不能让入口无法显示。
-- 批量导入入口在列表页工具栏「批量导入」：弹窗内选择 JSON 文件或直接粘贴 → 「预览」展示“将新建 N 个 / 跳过 M 个”与逐行原因（含图标来源与图标错误）→ 「开始导入」显示每行状态（排队/检测目标/安装中/完成/失败/未安装）并轮询到结束，结束后自动刷新列表。
+- 批量导入入口在列表页工具栏「批量导入」：弹窗内选择 JSON 文件或直接粘贴 → 「预览」展示“将新建 N 个 / 接管并重装 M 个 / 跳过 K 个”、逐行端口与原因（含图标来源与图标错误）→ 勾选「同时还原全局设置」时按文件的 settings 块覆盖前后缀与默认 DNS → 「开始导入」显示每行状态（排队/检测目标/安装中/完成/失败/未安装）并轮询到结束，结束后自动刷新列表与设置。
+- 备份/还原按这两条路走：换机或重装托管台前点「导出全部」得到一份带图标与 settings 的 JSON；新环境里导入这份文件，已装同名应用被接管重装、未装的按备份端口新建。单条「导出」只用于迁移一个目标，不带 settings。
 - 导出入口两个：工具栏「导出全部」下载包含全部目标的单个 JSON；每行的「导出」下载只含该目标的单个 JSON。两者都默认内嵌图标。
 - 不做实时健康检查；提供刷新。
 - 空状态给“新建代理应用”按钮。

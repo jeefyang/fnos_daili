@@ -106,6 +106,9 @@ type SpecInput struct {
 	// Icon accepts a base64 data URL or an absolute path on the NAS; the path
 	// form exists for hand-written and exported import files.
 	Icon string "json:\"icon,omitempty\""
+	// Port is only read while importing a backup: the restore keeps the original
+	// entry port when it is still free, so entry URLs survive a restore.
+	Port int "json:\"port,omitempty\""
 }
 
 // AuthView never contains a password or hash.
@@ -371,21 +374,34 @@ func (s *Service) Update(id string, in SpecInput) (TargetView, error) {
 // allocatePortLocked picks the lowest free port in the proxy range. The bind
 // test catches listeners that are not in state.json (for example a manually
 // installed package).
-func (s *Service) allocatePortLocked() (int, error) {
+func (s *Service) allocatePortLocked() (int, error) { return s.allocatePortPreferLocked(0) }
+
+// allocatePortPreferLocked returns prefer when it is inside the proxy range and
+// nobody is listening on it, and otherwise falls back to the lowest free port.
+// A restore uses prefer to keep the original entry port.
+func (s *Service) allocatePortPreferLocked(prefer int) (int, error) {
 	used := map[int]bool{}
 	for _, t := range s.st.Targets {
 		used[t.Spec.Port] = true
 	}
-	for p := spec.PortMin; p <= spec.PortMax; p++ {
-		if used[p] {
-			continue
+	free := func(p int) bool {
+		if p < spec.PortMin || p > spec.PortMax || used[p] {
+			return false
 		}
 		ln, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", p))
 		if err != nil {
-			continue
+			return false
 		}
 		_ = ln.Close()
-		return p, nil
+		return true
+	}
+	if prefer > 0 && free(prefer) {
+		return prefer, nil
+	}
+	for p := spec.PortMin; p <= spec.PortMax; p++ {
+		if free(p) {
+			return p, nil
+		}
 	}
 	return 0, &spec.Error{Field: "port", Message: fmt.Sprintf("no free port in %d-%d", spec.PortMin, spec.PortMax)}
 }

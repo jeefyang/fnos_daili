@@ -15,9 +15,10 @@ import (
 // ExportDocument is a self-contained backup of targets: the same field names
 // the import endpoint accepts, plus the icon bytes when asked for.
 type ExportDocument struct {
-	Schema     int            `json:"schema"`
-	ExportedAt time.Time      `json:"exported_at"`
-	Targets    []ExportTarget `json:"targets"`
+	Schema     int             `json:"schema"`
+	ExportedAt time.Time       `json:"exported_at"`
+	Settings   *state.Settings `json:"settings,omitempty"`
+	Targets    []ExportTarget  `json:"targets"`
 }
 
 // ExportTarget mirrors SpecInput so a file exports and re-imports cleanly.
@@ -71,6 +72,15 @@ func (s *Service) Export(ids []string, withIcons bool) (ExportDocument, error) {
 		return ExportDocument{}, errors.New("还没有可导出的目标")
 	}
 	doc := ExportDocument{Schema: 1, ExportedAt: s.now(), Targets: make([]ExportTarget, 0, len(targets))}
+	if len(ids) == 0 {
+		// A full backup carries the global settings too, so a restore rebuilds
+		// the same naming convention. A single-target export leaves them out.
+		st := *state.DefaultSettings()
+		if s.st.Settings != nil {
+			st = *s.st.Settings
+		}
+		doc.Settings = &st
+	}
 	for _, t := range targets {
 		doc.Targets = append(doc.Targets, exportTargetOf(t, withIcons))
 	}

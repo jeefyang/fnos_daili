@@ -418,6 +418,7 @@
       '<div class="alert info">JSON 里每个对象是一个目标，字段与“新建代理”一致：<span class="mono">target_url</span> 必填，<span class="mono">appname</span> 可省略（按全局前后缀自动生成）。图标用 <span class="mono">icon</span> 字段：可填 base64 data URL，也可填 NAS 上的绝对路径（如 <span class="mono">/vol1/1000/icons/ha.png</span>）。与已有 appname 冲突的条目会跳过，不会覆盖。</div>' +
       '<div class="field" style="margin-top:12px"><label for="impFile">选择 JSON 文件</label><input id="impFile" type="file" accept=".json,application/json"></div>' +
       '<div class="field"><label for="impText">或直接粘贴</label><textarea id="impText" class="textarea mono" rows="10" spellcheck="false" placeholder="粘贴或选择 JSON 文件"></textarea><div class="help">也接受顶层是数组的文件。示例见仓库 docs/examples/import-targets.json。</div></div>' +
+      '<div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:normal"><input id="impSettings" type="checkbox" style="width:auto;margin:0"> 同时还原全局设置（应用标识前后缀、默认 DNS）</label><div class="help">备份文件里带 settings 块；勾选会用文件里的值覆盖当前设置。只导目标时忽略。</div></div>' +
       '<div id="impResult"></div>',
       [
         { label: '预览', onClick: function () { previewImport(); } },
@@ -425,6 +426,12 @@
       ]);
     var f = $('impFile');
     if (f) f.addEventListener('change', onImportFile);
+    var cb = $('impSettings');
+    if (cb) cb.addEventListener('change', function () {
+      if (state.importPlan && document.getElementById('impResult')) {
+        $('impResult').innerHTML = renderImportPlan(state.importPlan);
+      }
+    });
   }
 
   function onImportFile() {
@@ -459,9 +466,9 @@
   }
 
   function importActionPill(action) {
-    return action === 'create'
-      ? '<span class="pill ok"><span class="dot"></span>新建</span>'
-      : '<span class="pill neutral"><span class="dot"></span>跳过</span>';
+    if (action === 'create') return '<span class="pill ok"><span class="dot"></span>新建</span>';
+    if (action === 'adopt') return '<span class="pill warn"><span class="dot"></span>接管</span>';
+    return '<span class="pill neutral"><span class="dot"></span>跳过</span>';
   }
 
   function renderImportPlan(plan) {
@@ -472,21 +479,33 @@
         '<td class="mono">' + esc(r.appname) + '</td>' +
         '<td>' + esc(r.display_name) + '</td>' +
         '<td class="mono">' + esc(r.target_url) + '</td>' +
+        '<td class="mono">' + (r.port ? esc(r.port) : '自动') + '</td>' +
         '<td class="faint" style="font-size:12px">' + esc(r.reason || '') + '</td>' +
         '</tr>';
     }).join('');
-    var head = '<div class="alert ' + (plan.create ? 'info' : 'warn') + '" style="margin-top:12px">将新建 <b>' + plan.create + '</b> 个，跳过 <b>' + plan.skip + '</b> 个。确认无误后点“开始导入”。</div>';
-    return head + '<table style="margin-top:8px"><thead><tr><th>#</th><th>动作</th><th>appname</th><th>名称</th><th>目标</th><th>原因</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    var wantSettings = !!(document.getElementById('impSettings') && $('impSettings').checked);
+    var counts = '将新建 <b>' + (plan.create || 0) + '</b> 个';
+    if (plan.adopt) counts += '，接管并重装 <b>' + plan.adopt + '</b> 个';
+    counts += '，跳过 <b>' + plan.skip + '</b> 个';
+    var head = '<div class="alert ' + ((plan.create || plan.adopt) ? 'info' : 'warn') + '" style="margin-top:12px">' + counts + '。确认无误后点“开始导入”。</div>';
+    if (plan.settings) {
+      head += '<div class="alert info" style="margin-top:8px">文件里带了全局设置' +
+        (plan.settings.appname_prefix ? '：前缀 <span class="mono">' + esc(plan.settings.appname_prefix) + '</span>' : '') +
+        (plan.settings.dns_server ? '，默认 DNS <span class="mono">' + esc(plan.settings.dns_server) + '</span>' : '') +
+        (wantSettings ? '，导入时会一并还原。' : '，当前未勾选还原，只导入目标。') + '</div>';
+    }
+    return head + '<table style="margin-top:8px"><thead><tr><th>#</th><th>动作</th><th>appname</th><th>名称</th><th>目标</th><th>端口</th><th>原因</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   function startImport() {
     var text = importText();
     if (!text) { toast('先选择文件或粘贴 JSON', true); return; }
     if (!state.importPlan) { toast('先点“预览”确认要导入的条目', true); return; }
-    if (!state.importPlan.create) { toast('没有可导入的条目', true); return; }
+    if (!state.importPlan.create && !state.importPlan.adopt) { toast('没有可导入的条目', true); return; }
     var box = $('impResult');
+    var restoreSettings = !!(document.getElementById('impSettings') && $('impSettings').checked);
     box.innerHTML = '<div class="muted" style="margin-top:12px">正在创建目标并排队安装…</div>';
-    api('/api/import', { method: 'POST', body: { text: text, install: true } }).then(function (view) {
+    api('/api/import', { method: 'POST', body: { text: text, install: true, restore_settings: restoreSettings } }).then(function (view) {
       renderBatch(view);
       if (view.id && view.status !== 'done') pollBatch(view.id);
       if (view.status === 'done') finishBatch(view);
@@ -517,6 +536,7 @@
         '<td class="mono">' + esc(it.appname) + '</td>' +
         '<td>' + esc(it.display_name) + '</td>' +
         '<td class="mono">' + esc(it.target_url) + '</td>' +
+        '<td class="mono">' + (it.port ? esc(it.port) : '') + '</td>' +
         '<td>' + batchStatePill(it.state) + '</td>' +
         '<td class="faint" style="font-size:12px;max-width:260px">' + esc(it.error || '') + '</td>' +
         '</tr>';
@@ -528,7 +548,7 @@
       (view.status === 'done' ? '批量导入结束' : '正在执行') + '：共 ' + view.total + ' 个，完成 ' + (view.done || 0) + ' 个' +
       (view.failed ? '，失败 <b>' + view.failed + '</b> 个' : '') + '。</div>';
     var tail = skipped ? '<div class="field" style="margin-top:12px"><label>跳过的条目</label><ul class="muted" style="margin:6px 0 0 18px;font-size:12.5px">' + skipped + '</ul></div>' : '';
-    box.innerHTML = head + '<table style="margin-top:8px"><thead><tr><th>#</th><th>appname</th><th>名称</th><th>目标</th><th>状态</th><th>说明</th></tr></thead><tbody>' + rows + '</tbody></table>' + tail;
+    box.innerHTML = head + '<table style="margin-top:8px"><thead><tr><th>#</th><th>appname</th><th>名称</th><th>目标</th><th>端口</th><th>状态</th><th>说明</th></tr></thead><tbody>' + rows + '</tbody></table>' + tail;
   }
 
   function pollBatch(id) {
@@ -544,6 +564,7 @@
 
   function finishBatch(view) {
     loadListCached().catch(function () {});
+    loadSettings().catch(function () {});
     var okCount = (view.done || 0) - (view.failed || 0);
     if (view.failed) toast('导入完成：成功 ' + okCount + ' 个，失败 ' + view.failed + ' 个', true);
     else toast('导入完成：' + okCount + ' 个应用已运行');

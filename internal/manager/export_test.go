@@ -87,20 +87,23 @@ func TestExportImportRoundTripKeepsIconAndHash(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := parseImportDocument(blob)
+	parsed, err := parseImportDocument(blob)
 	if err != nil {
 		t.Fatalf("exported file does not import: %v", err)
 	}
-	if len(items) != 1 || items[0].Icon == "" {
-		t.Fatalf("parsed items = %+v", items)
+	if len(parsed.Targets) != 1 || parsed.Targets[0].Icon == "" {
+		t.Fatalf("parsed items = %+v", parsed.Targets)
+	}
+	if parsed.Settings == nil {
+		t.Fatal("full export did not carry the settings block")
 	}
 
 	fresh, _ := newTestService(t)
-	plan, _, _ := fresh.PlanImport(context.Background(), items, "")
+	plan, _, _ := fresh.PlanImport(context.Background(), parsed, "")
 	if plan.Create != 1 || plan.Rows[0].IconSource != "custom" {
 		t.Fatalf("plan = %+v", plan)
 	}
-	if _, err := fresh.ImportBulk(context.Background(), items, false, true); err != nil {
+	if _, err := fresh.ImportBulk(context.Background(), parsed, false, true, false); err != nil {
 		t.Fatal(err)
 	}
 	again, err := fresh.Export(nil, true)
@@ -158,9 +161,9 @@ func TestImportIconFromAbsolutePath(t *testing.T) {
 
 func TestImportSkipsRowsWithBadIcon(t *testing.T) {
 	s, _ := newTestService(t)
-	plan, _, _ := s.PlanImport(context.Background(), []SpecInput{
+	plan, _, _ := s.PlanImport(context.Background(), importDocument{Targets: []SpecInput{
 		{AppName: "proxy.bad", DisplayName: "Bad", TargetURL: "http://192.168.1.30:8080", Mode: "reverse", Icon: "/definitely/missing.png"},
-	}, "")
+	}}, "")
 	if plan.Skip != 1 || !strings.Contains(plan.Rows[0].Reason, "图标") {
 		t.Fatalf("plan = %+v", plan)
 	}

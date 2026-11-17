@@ -427,16 +427,19 @@ type importRequest struct {
 	Targets   []SpecInput `json:"targets"`
 	Install   *bool       `json:"install"`
 	SkipProbe bool        `json:"skip_probe"`
+	// RestoreSettings applies the settings block of a backup file (appname
+	// prefix/suffix and default DNS) before the targets are created.
+	RestoreSettings bool `json:"restore_settings"`
 }
 
-func (req importRequest) items() ([]SpecInput, error) {
+func (req importRequest) document() (importDocument, error) {
 	if strings.TrimSpace(req.Text) != "" {
 		return parseImportDocument([]byte(req.Text))
 	}
 	if req.Targets == nil {
-		return nil, errors.New("没有要导入的目标")
+		return importDocument{}, errors.New("没有要导入的目标")
 	}
-	return req.Targets, nil
+	return importDocument{Targets: req.Targets}, nil
 }
 
 func (s *Service) handleImportPreview(w http.ResponseWriter, r *http.Request) {
@@ -445,14 +448,14 @@ func (s *Service) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
-	items, err := body.items()
+	doc, err := body.document()
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_import", err.Error())
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	plan, _, _ := s.PlanImport(ctx, items, s.Settings().DNSServer)
+	plan, _, _ := s.PlanImport(ctx, doc, s.Settings().DNSServer)
 	writeJSON(w, http.StatusOK, plan)
 }
 
@@ -462,7 +465,7 @@ func (s *Service) handleImport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
-	items, err := body.items()
+	doc, err := body.document()
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_import", err.Error())
 		return
@@ -473,7 +476,7 @@ func (s *Service) handleImport(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
-	view, err := s.ImportBulk(ctx, items, install, body.SkipProbe)
+	view, err := s.ImportBulk(ctx, doc, install, body.SkipProbe, body.RestoreSettings)
 	if err != nil {
 		writeServiceError(w, err)
 		return
