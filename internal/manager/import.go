@@ -14,6 +14,7 @@ import (
 
 	"github.com/jeefyang/fnos_daili/internal/dnsx"
 	"github.com/jeefyang/fnos_daili/internal/guard"
+	"github.com/jeefyang/fnos_daili/internal/icon"
 	"github.com/jeefyang/fnos_daili/internal/spec"
 	"github.com/jeefyang/fnos_daili/internal/state"
 	"github.com/jeefyang/fnos_daili/internal/target"
@@ -41,6 +42,7 @@ type ImportRow struct {
 	DisplayName string `json:"display_name"`
 	TargetURL   string `json:"target_url"`
 	Mode        string `json:"mode"`
+	IconSource  string `json:"icon_source,omitempty"`
 	Reason      string `json:"reason,omitempty"`
 }
 
@@ -110,9 +112,10 @@ func parseImportDocument(data []byte) ([]SpecInput, error) {
 
 // PlanImport validates every row and decides create/skip without writing
 // anything. The CLI is asked once for the installed application list.
-func (s *Service) PlanImport(ctx context.Context, in []SpecInput, defaultDNS string) (ImportPlan, []spec.ProxySpec) {
+func (s *Service) PlanImport(ctx context.Context, in []SpecInput, defaultDNS string) (ImportPlan, []spec.ProxySpec, []icon.Set) {
 	plan := ImportPlan{}
 	specs := make([]spec.ProxySpec, len(in))
+	icons := make([]icon.Set, len(in))
 	seen := map[string]bool{}
 	if installed, err := s.cliNames(ctx); err == nil {
 		for name := range installed {
@@ -146,10 +149,26 @@ func (s *Service) PlanImport(ctx context.Context, in []SpecInput, defaultDNS str
 			plan.Skip++
 			continue
 		}
+		set, _, err := iconFromInput(item)
+		if err != nil {
+			row.Action = ImportSkip
+			row.AppName = sp.AppName
+			row.DisplayName = sp.DisplayName
+			row.TargetURL = sp.TargetURL
+			row.Mode = sp.Mode
+			row.Reason = "图标不合法：" + err.Error()
+			plan.Rows = append(plan.Rows, row)
+			plan.Skip++
+			continue
+		}
 		row.AppName = sp.AppName
 		row.DisplayName = sp.DisplayName
 		row.TargetURL = sp.TargetURL
 		row.Mode = sp.Mode
+		row.IconSource = "default"
+		if len(set.Icon64) > 0 {
+			row.IconSource = "custom"
+		}
 		switch {
 		case used[sp.AppName]:
 			row.Action = ImportSkip
@@ -164,10 +183,11 @@ func (s *Service) PlanImport(ctx context.Context, in []SpecInput, defaultDNS str
 		} else {
 			plan.Create++
 			specs[i] = sp
+			icons[i] = set
 		}
 		plan.Rows = append(plan.Rows, row)
 	}
-	return plan, specs
+	return plan, specs, icons
 }
 
 // suggestImportAppName derives an appname for rows that leave it out. The
@@ -246,7 +266,7 @@ func hostOfTarget(raw string) string {
 // install is true, starts a background batch that installs them one at a time
 // under the global CLI lock.
 func (s *Service) ImportBulk(ctx context.Context, in []SpecInput, install, skipProbe bool) (BatchView, error) {
-	plan, specs := s.PlanImport(ctx, in, s.Settings().DNSServer)
+	plan, specs, icons := s.PlanImport(ctx, in, s.Settings().DNSServer)
 	var created []BatchItemView
 	var skipped []ImportRow
 	for i, row := range plan.Rows {
@@ -254,7 +274,7 @@ func (s *Service) ImportBulk(ctx context.Context, in []SpecInput, install, skipP
 			skipped = append(skipped, row)
 			continue
 		}
-		view, err := s.createFromSpec(specs[i])
+		view, err := s.createFromSpec(specs[i], icons[i])
 		if err != nil {
 			row.Action = ImportSkip
 			row.Reason = err.Error()
@@ -303,7 +323,7 @@ func (s *Service) ImportBulk(ctx context.Context, in []SpecInput, install, skipP
 	return view, nil
 }
 
-func (s *Service) createFromSpec(sp spec.ProxySpec) (TargetView, error) {
+func (s *Service) createFromSpec(sp spec.ProxySpec, set icon.Set) (TargetView, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.byAppLocked(sp.AppName) != nil {
@@ -317,6 +337,8 @@ func (s *Service) createFromSpec(sp spec.ProxySpec) (TargetView, error) {
 	sp.Port = port
 	now := s.now()
 	t := state.Target{Spec: sp, Runtime: state.Runtime{State: state.StateDraft, CreatedAt: now, UpdatedAt: now}}
+	t.CustomIcon64 = set.Icon64
+	t.CustomIcon256 = set.Icon256
 	s.st.Targets = append(s.st.Targets, t)
 	if err := s.saveLocked(); err != nil {
 		return TargetView{}, err

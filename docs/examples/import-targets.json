@@ -1,17 +1,20 @@
 {
+  "schema": 1,
   "targets": [
     {
       "display_name": "家里的 Home Assistant",
       "target_url": "http://192.168.1.10:8123",
       "mode": "reverse",
-      "desc": "客厅那台 HA"
+      "description": "客厅那台 HA",
+      "icon": "/vol1/1000/icons/home-assistant.png"
     },
     {
       "display_name": "公司 NAS 面板",
       "target_url": "https://nas.example.com:5001",
       "mode": "reverse",
       "skip_tls_verify": true,
-      "dns_server": "223.5.5.5"
+      "dns_server": "223.5.5.5",
+      "icon": "/vol1/1000/icons/nas-panel.png"
     },
     {
       "display_name": "路由器",

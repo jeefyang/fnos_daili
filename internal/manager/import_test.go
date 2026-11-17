@@ -66,7 +66,7 @@ func TestPlanImportMarksConflictsAndBadRows(t *testing.T) {
 		{AppName: "proxy.bad", DisplayName: "bad", TargetURL: "ftp://192.168.1.23", Mode: "reverse"},
 		{AppName: "proxy.b", DisplayName: "dup in file", TargetURL: "http://192.168.1.24:8070", Mode: "reverse"},
 	}
-	plan, specs := s.PlanImport(context.Background(), items, "")
+	plan, specs, _ := s.PlanImport(context.Background(), items, "")
 	if plan.Create != 2 || plan.Skip != 3 {
 		t.Fatalf("plan create=%d skip=%d rows=%+v", plan.Create, plan.Skip, plan.Rows)
 	}
@@ -86,7 +86,7 @@ func TestPlanImportMarksConflictsAndBadRows(t *testing.T) {
 
 func TestPlanImportSuggestsAppName(t *testing.T) {
 	s, _ := newTestService(t)
-	plan, specs := s.PlanImport(context.Background(), []SpecInput{
+	plan, specs, _ := s.PlanImport(context.Background(), []SpecInput{
 		{DisplayName: "Home Assistant", TargetURL: "http://192.168.1.10:8123", Mode: "reverse"},
 	}, "")
 	if plan.Create != 1 {

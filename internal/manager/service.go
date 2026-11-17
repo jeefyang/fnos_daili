@@ -75,9 +75,12 @@ type UnmanagedApp struct {
 }
 
 // AuthInput carries a plaintext password on create/update. It is never stored.
+// PasswordHash is only used when re-importing an export file, which already
+// holds a bcrypt hash; it must have cost 12.
 type AuthInput struct {
-	Username string "json:\"username\""
-	Password string "json:\"password\""
+	Username     string "json:\"username\""
+	Password     string "json:\"password\""
+	PasswordHash string "json:\"password_hash,omitempty\""
 }
 
 // SpecInput is the API's editable portion of a target.
@@ -100,6 +103,9 @@ type SpecInput struct {
 	BasicAuth     *AuthInput "json:\"basic_auth,omitempty\""
 	IconData      string     "json:\"icon_data,omitempty\""
 	RemoveIcon    bool       "json:\"remove_icon,omitempty\""
+	// Icon accepts a base64 data URL or an absolute path on the NAS; the path
+	// form exists for hand-written and exported import files.
+	Icon string "json:\"icon,omitempty\""
 }
 
 // AuthView never contains a password or hash.
@@ -414,10 +420,17 @@ func (s *Service) specFromInput(in SpecInput, existingAuth *spec.BasicAuth, defa
 			return sp, &spec.Error{Field: "basic_auth", Message: "username must be 1-64 bytes"}
 		}
 		if in.BasicAuth.Password == "" {
-			if existingAuth == nil || existingAuth.Username != username {
+			switch {
+			case in.BasicAuth.PasswordHash != "":
+				if err := validBcryptHash(in.BasicAuth.PasswordHash); err != nil {
+					return sp, &spec.Error{Field: "basic_auth", Message: err.Error()}
+				}
+				sp.BasicAuth = &spec.BasicAuth{Username: username, PasswordHash: in.BasicAuth.PasswordHash}
+			case existingAuth != nil && existingAuth.Username == username:
+				sp.BasicAuth = &spec.BasicAuth{Username: username, PasswordHash: existingAuth.PasswordHash}
+			default:
 				return sp, &spec.Error{Field: "basic_auth", Message: "password is required"}
 			}
-			sp.BasicAuth = &spec.BasicAuth{Username: username, PasswordHash: existingAuth.PasswordHash}
 		} else {
 			if len(in.BasicAuth.Password) < 8 || len(in.BasicAuth.Password) > 72 {
 				return sp, &spec.Error{Field: "basic_auth", Message: "password must be 8-72 bytes"}
@@ -432,21 +445,30 @@ func (s *Service) specFromInput(in SpecInput, existingAuth *spec.BasicAuth, defa
 	return spec.NormalizeProxySpec(sp)
 }
 
-// iconFromInput decodes the optional data URL from the browser. remove_icon
-// and icon_data are mutually exclusive; a successful decode always returns a
-// complete 64/256 pair.
+// iconFromInput decodes the optional image from the browser or an import file.
+// remove_icon, icon_data and icon are mutually exclusive; a successful decode
+// always returns a complete 64/256 pair.
 func iconFromInput(in SpecInput) (icon.Set, bool, error) {
 	var zero icon.Set
-	if in.RemoveIcon && in.IconData != "" {
+	sources := 0
+	for _, v := range []string{in.IconData, in.Icon} {
+		if strings.TrimSpace(v) != "" {
+			sources++
+		}
+	}
+	if in.RemoveIcon && sources > 0 {
 		return zero, false, &spec.Error{Field: "icon", Message: "icon_data and remove_icon cannot be used together"}
+	}
+	if sources > 1 {
+		return zero, false, &spec.Error{Field: "icon", Message: "icon_data and icon cannot be used together"}
 	}
 	if in.RemoveIcon {
 		return zero, true, nil
 	}
-	if in.IconData == "" {
+	if sources == 0 {
 		return zero, false, nil
 	}
-	raw, err := decodeIconDataURL(in.IconData)
+	raw, err := decodeIconInput(in)
 	if err != nil {
 		return zero, false, &spec.Error{Field: "icon", Message: err.Error()}
 	}
@@ -455,6 +477,48 @@ func iconFromInput(in SpecInput) (icon.Set, bool, error) {
 		return zero, false, &spec.Error{Field: "icon", Message: err.Error()}
 	}
 	return set, true, nil
+}
+
+// decodeIconInput accepts either an inline data URL or an absolute path to an
+// image on the NAS, so exported files and hand-written imports both work.
+func decodeIconInput(in SpecInput) ([]byte, error) {
+	if strings.TrimSpace(in.IconData) != "" {
+		return decodeIconDataURL(in.IconData)
+	}
+	ref := strings.TrimSpace(in.Icon)
+	if strings.HasPrefix(ref, "data:") {
+		return decodeIconDataURL(ref)
+	}
+	path := strings.TrimPrefix(ref, "file://")
+	if !filepath.IsAbs(path) {
+		return nil, fmt.Errorf("icon path must be absolute (got %q)", ref)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("无法读取图标文件：%w", err)
+	}
+	defer f.Close()
+	// One byte over the upload limit lets us tell "too large" from "exactly at
+	// the limit" without loading the whole file.
+	data, err := io.ReadAll(io.LimitReader(f, icon.MaxUploadBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("无法读取图标文件：%w", err)
+	}
+	if len(data) > icon.MaxUploadBytes {
+		return nil, fmt.Errorf("图标文件超过 2MiB")
+	}
+	return data, nil
+}
+
+func validBcryptHash(hash string) error {
+	cost, err := bcrypt.Cost([]byte(hash))
+	if err != nil {
+		return errors.New("password_hash is not a bcrypt hash")
+	}
+	if cost != 12 {
+		return fmt.Errorf("password_hash must use bcrypt cost 12 (got %d)", cost)
+	}
+	return nil
 }
 
 func decodeIconDataURL(s string) ([]byte, error) {

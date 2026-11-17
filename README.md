@@ -105,6 +105,17 @@ sudo appcenter-cli list
 
 列表工具栏的“批量导入”可以一次装一批：选一个 JSON 文件或直接粘贴，先“预览”看哪些会新建、哪些被跳过（appname 冲突、字段不合法、文件内重复），确认后“开始导入”。导入会逐个探测目标、逐个安装，单条失败不影响其余条目；不可达的目标只建为草稿、不安装。JSON 字段与新建表单一致，示例见 [docs/examples/import-targets.json](docs/examples/import-targets.json)。
 
+图标写在 `icon` 字段里，两种写法都行：
+
+```json
+{"appname": "proxy.ha", "icon": "/vol1/1000/icons/home-assistant.png"}
+{"appname": "proxy.ha", "icon": "data:image/png;base64,iVBORw0KGgo..."}
+```
+
+路径必须是 NAS 上的绝对路径（文件超过 2MiB 会拒绝），base64 可以直接从别处复制 data URL。
+
+导出有两个入口：工具栏“导出全部”下载一个包含所有目标的 JSON，每行的“导出”只下载这一条。两者默认把自定义图标内嵌成 base64，导出的文件可以直接再导入回来。注意导出的 `basic_auth` 带 bcrypt 口令哈希（否则导回后口令就丢了），按敏感文件保管。
+
 真机部署路径、两个历史故障（空白窗口 / CGI 500）与排障顺序见
 [docs/research/manager-deployment.md](docs/research/manager-deployment.md)。
 

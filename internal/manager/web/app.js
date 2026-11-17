@@ -284,6 +284,7 @@
         actions.push('<button class="btn sm" data-act="apply" data-id="' + esc(sp.id) + '" type="button">' + (rt.state === 'draft' ? '安装' : '重新应用') + '</button>');
         if (rt.last_known_good_path) actions.push('<button class="btn sm" data-act="rollback" data-id="' + esc(sp.id) + '" type="button">回滚</button>');
         if (rt.package_path) actions.push('<a class="btn sm" href="' + apiURL('/api/targets/' + encodeURIComponent(sp.id) + '/package') + '">下载</a>');
+        actions.push('<a class="btn sm" href="' + apiURL('/api/targets/' + encodeURIComponent(sp.id) + '/export') + '">导出</a>');
         actions.push('<button class="btn sm" data-act="log" data-id="' + esc(sp.id) + '" type="button">日志</button>');
         actions.push('<button class="btn sm danger" data-act="delete" data-id="' + esc(sp.id) + '" type="button">删除</button>');
         return '<tr>' +
@@ -414,7 +415,7 @@
   function openImport() {
     state.importPlan = null;
     openModal('批量导入目标',
-      '<div class="alert info">JSON 里每个对象是一个目标，字段与“新建代理”一致：<span class="mono">target_url</span> 必填，<span class="mono">appname</span> 可省略（按全局前后缀自动生成）。与托管台或系统已有 appname 冲突的条目会跳过，不会覆盖，也不会改动已有目标。</div>' +
+      '<div class="alert info">JSON 里每个对象是一个目标，字段与“新建代理”一致：<span class="mono">target_url</span> 必填，<span class="mono">appname</span> 可省略（按全局前后缀自动生成）。图标用 <span class="mono">icon</span> 字段：可填 base64 data URL，也可填 NAS 上的绝对路径（如 <span class="mono">/vol1/1000/icons/ha.png</span>）。与已有 appname 冲突的条目会跳过，不会覆盖。</div>' +
       '<div class="field" style="margin-top:12px"><label for="impFile">选择 JSON 文件</label><input id="impFile" type="file" accept=".json,application/json"></div>' +
       '<div class="field"><label for="impText">或直接粘贴</label><textarea id="impText" class="textarea mono" rows="10" spellcheck="false" placeholder="粘贴或选择 JSON 文件"></textarea><div class="help">也接受顶层是数组的文件。示例见仓库 docs/examples/import-targets.json。</div></div>' +
       '<div id="impResult"></div>',
@@ -1178,6 +1179,7 @@
     $('settingsBtn').addEventListener('click', openSettings);
     $('newBtn').addEventListener('click', startNew);
     $('importBtn').addEventListener('click', openImport);
+    if ($('exportBtn')) $('exportBtn').href = apiURL('/api/export');
     $('wizardBackBtn').addEventListener('click', function () {
       switchTab('list');
       loadListCached();

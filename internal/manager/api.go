@@ -51,6 +51,8 @@ func (s *Service) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/import/preview", s.handleImportPreview)
 	mux.HandleFunc("POST /api/import", s.handleImport)
 	mux.HandleFunc("GET /api/import/{id}", s.handleBatch)
+	mux.HandleFunc("GET /api/export", s.handleExport)
+	mux.HandleFunc("GET /api/targets/{id}/export", s.handleExportOne)
 	mux.HandleFunc("POST /api/favicon", s.handleFavicon)
 	mux.HandleFunc("POST /api/icon-library", s.handleIconLibrary)
 	mux.HandleFunc("GET /api/appnames/check", s.handleAppNameCheck)
@@ -450,7 +452,7 @@ func (s *Service) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	plan, _ := s.PlanImport(ctx, items, s.Settings().DNSServer)
+	plan, _, _ := s.PlanImport(ctx, items, s.Settings().DNSServer)
 	writeJSON(w, http.StatusOK, plan)
 }
 
@@ -871,6 +873,19 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeDownload sends a JSON document as a file attachment.
+func writeDownload(w http.ResponseWriter, name, contentType string, v any) {
+	if contentType == "" {
+		contentType = "application/json; charset=utf-8"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
+	w.Header().Set("Cache-Control", "no-store")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(v)
 }
 
 func writeError(w http.ResponseWriter, status int, code, msg string) {
