@@ -161,8 +161,15 @@ func decodeICOBitmap(payload []byte, f icoFrame) (image.Image, error) {
 	if offset+rowSize*height > len(payload) {
 		return nil, fmt.Errorf("ICO bitmap pixels are truncated")
 	}
+	// The AND mask follows the colour rows (both bottom-up) and marks the
+	// pixels that are transparent. Old 1/4/8/24-bit frames carry their whole
+	// transparency there because their pixels have no alpha channel.
+	maskOffset := offset + rowSize*height
+	maskRowSize := ((width + 31) / 32) * 4
+	hasMask := maskOffset+maskRowSize*height <= len(payload)
+
 	img := image.NewNRGBA(image.Rect(0, 0, width, height))
-	opaque := true
+	sawAlpha := false
 	for y := 0; y < height; y++ {
 		row := payload[offset+(height-1-y)*rowSize:]
 		for x := 0; x < width; x++ {
@@ -172,7 +179,7 @@ func decodeICOBitmap(payload []byte, f icoFrame) (image.Image, error) {
 				p := row[x*4:]
 				c = color.NRGBA{R: p[2], G: p[1], B: p[0], A: p[3]}
 				if p[3] != 0 {
-					opaque = false
+					sawAlpha = true
 				}
 			case 24:
 				p := row[x*3:]
@@ -195,13 +202,30 @@ func decodeICOBitmap(payload []byte, f icoFrame) (image.Image, error) {
 			img.SetNRGBA(x, y, c)
 		}
 	}
-	if bitCount == 32 && opaque {
-		// Some editors leave the alpha channel at zero; treat that as opaque.
-		for i := 3; i < len(img.Pix); i += 4 {
-			img.Pix[i] = 255
+	// A 32-bit frame whose alpha channel is actually populated carries its own
+	// transparency and the mask is ignored, as Windows does. Everywhere else,
+	// including 32-bit frames that some editors leave at alpha zero, the mask
+	// decides: bit set = transparent.
+	if bitCount != 32 || !sawAlpha {
+		for y := 0; y < height; y++ {
+			var maskRow []byte
+			if hasMask {
+				maskRow = payload[maskOffset+(height-1-y)*maskRowSize:]
+			}
+			for x := 0; x < width; x++ {
+				a := byte(255)
+				if maskRow != nil && maskTransparent(maskRow, x) {
+					a = 0
+				}
+				img.Pix[y*img.Stride+x*4+3] = a
+			}
 		}
 	}
 	return img, nil
+}
+
+func maskTransparent(row []byte, x int) bool {
+	return row[x/8]>>(7-uint(x%8))&1 == 1
 }
 
 func paletteAt(palette []color.NRGBA, idx int) color.NRGBA {

@@ -168,3 +168,112 @@ func TestDecodeICORejectsGarbage(t *testing.T) {
 		t.Fatal("non-ICO accepted")
 	}
 }
+
+func icoWithDepth(t *testing.T, w, h, bitCount int, payload []byte) []byte {
+	t.Helper()
+	header := icoHeader(1)
+	entry := icoEntry(w, h, bitCount, 6+16, len(payload))
+	var buf bytes.Buffer
+	buf.Write(header)
+	buf.Write(entry)
+	buf.Write(payload)
+	return buf.Bytes()
+}
+
+// bmp24Payload builds the older 24-bit frame that keeps all its transparency
+// in the AND mask; maskCols left-hand columns are marked transparent.
+func bmp24Payload(t *testing.T, w, h, maskCols int) []byte {
+	t.Helper()
+	rowSize := ((24*w + 31) / 32) * 4
+	maskRow := ((w + 31) / 32) * 4
+	payload := make([]byte, 40+rowSize*h+maskRow*h)
+	binary.LittleEndian.PutUint32(payload[0:4], 40)
+	binary.LittleEndian.PutUint32(payload[4:8], uint32(w))
+	binary.LittleEndian.PutUint32(payload[8:12], uint32(2*h))
+	binary.LittleEndian.PutUint16(payload[12:14], 1)
+	binary.LittleEndian.PutUint16(payload[14:16], 24)
+	for y := 0; y < h; y++ {
+		row := payload[40+(h-1-y)*rowSize:]
+		for x := 0; x < w; x++ {
+			p := row[x*3:]
+			p[0] = byte(x * 5)
+			p[1] = byte(y * 5)
+			p[2] = 90
+		}
+		if maskCols > 0 {
+			mrow := payload[40+rowSize*h+(h-1-y)*maskRow:]
+			for x := 0; x < maskCols && x < w; x++ {
+				mrow[x/8] |= 1 << uint(7-x%8)
+			}
+		}
+	}
+	return payload
+}
+
+func TestDecodeICOAppliesANDMask(t *testing.T) {
+	img, err := decodeICO(icoWithDepth(t, 32, 32, 24, bmp24Payload(t, 32, 32, 8)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nrgba := img.(*image.NRGBA)
+	if a := nrgba.NRGBAAt(0, 16).A; a != 0 {
+		t.Fatalf("masked pixel alpha = %d, want 0", a)
+	}
+	if a := nrgba.NRGBAAt(31, 16).A; a != 255 {
+		t.Fatalf("unmasked pixel alpha = %d, want 255", a)
+	}
+}
+
+func TestDecodeICOZeroAlphaFallsBackToMask(t *testing.T) {
+	payload := bmp32Payload(t, 32, 32, 0)
+	rowSize := ((32*32 + 31) / 32) * 4
+	maskRow := ((32 + 31) / 32) * 4
+	for y := 0; y < 32; y++ {
+		mrow := payload[40+rowSize*32+(31-y)*maskRow:]
+		mrow[0] = 0x80 // x = 0 transparent
+	}
+	img, err := decodeICO(icoWithDepth(t, 32, 32, 32, payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nrgba := img.(*image.NRGBA)
+	if a := nrgba.NRGBAAt(0, 10).A; a != 0 {
+		t.Fatalf("masked pixel alpha = %d, want 0", a)
+	}
+	if a := nrgba.NRGBAAt(10, 10).A; a != 255 {
+		t.Fatalf("unmasked pixel alpha = %d, want 255", a)
+	}
+}
+
+func TestNormalizeFaviconKeepsTransparentEdges(t *testing.T) {
+	set, err := NormalizeFavicon(icoWithDepth(t, 64, 64, 24, bmp24Payload(t, 64, 64, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := png.Decode(bytes.NewReader(set.Icon256))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := img.(*image.NRGBA).NRGBAAt(0, 128).A; a != 0 {
+		t.Fatalf("transparent edge alpha = %d, want 0", a)
+	}
+}
+
+func TestNormalizeFaviconSnapsEdgeAlpha(t *testing.T) {
+	set, err := NormalizeFavicon(icoWithDepth(t, 32, 32, 24, bmp24Payload(t, 32, 32, 12)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := png.Decode(bytes.NewReader(set.Icon256))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nrgba := img.(*image.NRGBA)
+	for y := 0; y < 256; y++ {
+		for x := 0; x < 256; x++ {
+			if a := nrgba.NRGBAAt(x, y).A; a > 0 && a < 8 {
+				t.Fatalf("fringe alpha %d at (%d,%d)", a, x, y)
+			}
+		}
+	}
+}
