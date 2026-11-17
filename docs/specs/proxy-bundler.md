@@ -138,7 +138,7 @@ type BasicAuth struct {
 
 图标不属于 `ProxySpec`，而是 target 的可选附件：API 输入用 `icon_data`（base64 data URL，PNG/JPEG，≤2MB，≥64×64，≤16M 像素）或 `remove_icon`（二者互斥），输出用 `has_icon`。托管台在保存时把图统一裁成 256 与 64 两档 PNG，存 state 的 `custom_icon_64` / `custom_icon_256`；生成包时替换内置图标。
 
-`POST /api/favicon` 供“从站点获取”按钮使用：输入 `target_url`、`dns_server`、`skip_tls_verify`、`allow_loopback`（后三者缺省取表单/全局设置），托管台用与代理运行时相同的解析器、目标拦截和 TLS 策略访问目标，先读页面 `<link rel=icon|apple-touch-icon>`（按 `sizes` 从大到小）再回退 `/favicon.ico`，最后用 `icon.NormalizeFavicon` 归一化。favicon 解码接受 PNG/JPEG/ICO：ICO 取最大帧，支持 PNG 帧与 32/24/8/4/1 位 BMP 帧；源图最小 16×16，小于 256 时放大。成功返回 `{"icon_data": "data:image/png;base64,..."}`（256 档），前端把它当作待保存的 `icon_data`；找不到图标返回 404 `favicon_not_found`，网络/解析失败返回 502 `favicon_failed`。
+`POST /api/favicon` 供“从站点获取”按钮使用：输入 `target_url`、`dns_server`、`skip_tls_verify`、`allow_loopback`（后三者缺省取表单/全局设置），托管台用与代理运行时相同的解析器、目标拦截和 TLS 策略访问目标，先读页面里的 web app manifest（`<link rel=manifest>`，取最大的 `icons[].src`），再读 `<link rel=icon|apple-touch-icon>`（按 `sizes` 从大到小），再试 `/apple-touch-icon.png`、`/apple-touch-icon-precomposed.png`，最后回退 `/favicon.ico`，用 `icon.NormalizeFavicon` 归一化。favicon 解码接受 PNG/JPEG/ICO：ICO 取最大帧，支持 PNG 帧与 32/24/8/4/1 位 BMP 帧（含 AND mask 透明），源图最小 16×16；小于 256 的源图用 Mitchell 三次核放大（无过冲，不留亮边与台阶），大于 256 用 CatmullRom 缩小，缩放后把 alpha 1..7 与 248..254 钳到 0/255。成功返回 `{"icon_data": "data:image/png;base64,..."}`（256 档），前端把它当作待保存的 `icon_data`；找不到图标返回 404 `favicon_not_found`，网络/解析失败返回 502 `favicon_failed`。
 
 ### 4.2 目标规范化
 
@@ -678,7 +678,7 @@ esac
 - `network` 从 `X-Daili-Client-IP`（CGI shim 写入）→ `X-Forwarded-For` → `X-Real-IP` → `RemoteAddr` 取第一个合法 IP；私网/回环/链路本地为 `lan=true`，公网为 `false`，取不到为 null。仅用于入口提示，不参与鉴权。
 - `test-target` 用同一目标拦截；请求体可带 `dns_server`（该目标表单里的值），缺省回退全局设置；返回 `{reachable, status, elapsed_ms, error, detail}`；`error` 是稳定类别（`dns_timeout`、`dns_failure`、`connect_failed`、`loopback`、`port` 等），`detail` 是截断到 160 字节、去掉换行的底层错误，只用于排障，不含口令与请求头。测试超时 10s，掩码直连模式跳过目标拦截。
 - `appnames/check` 规则：正则、保留名、state 冲突、`appcenter-cli list` 冲突。
-- `favicon` 只在用户点按时执行：body `{target_url, dns_server?, skip_tls_verify?, allow_loopback?}`；走同一目标拦截与 DNS 设置，页面最多读 256KiB、单个图标最多 2MiB、总超时 10s、最多 5 跳重定向（可跨源，每跳都过目标拦截与固定 DNS）；先读 `<link rel=icon|apple-touch-icon>`（按声明尺寸从大到小）再试 `/favicon.ico`；错误文本会去掉 URL 的 query，不把站点 token 写进日志；成功 `{icon_data}`，无图标 404 `favicon_not_found`，网络/解析失败 502 `favicon_failed`。
+- `favicon` 只在用户点按时执行：body `{target_url, dns_server?, skip_tls_verify?, allow_loopback?}`；走同一目标拦截与 DNS 设置，页面最多读 256KiB、单个图标最多 2MiB、总超时 10s、最多 5 跳重定向（可跨源，每跳都过目标拦截与固定 DNS）；先读 web app manifest 的 `icons[]`（最大者优先），再读 `<link rel=icon|apple-touch-icon>`（按声明尺寸从大到小），再试 `/apple-touch-icon.png` 与 `/apple-touch-icon-precomposed.png`，最后试 `/favicon.ico`；manifest 与页面各限 256KiB，manifest 里的 svg 图标跳过；错误文本会去掉 URL 的 query，不把站点 token 写进日志；成功 `{icon_data}`，无图标 404 `favicon_not_found`，网络/解析失败 502 `favicon_failed`。
 - 图标接口只返回 state 里的 PNG 字节；`size=64` 取 64 档，缺省 256 档；`Cache-Control: no-store`，避免换图后浏览器继续用旧图。
 - 创建/更新请求体上限 8MiB，容纳 2MiB 图片的 base64 与 JSON 开销。
 - 下载包只允许 state 里记录的路径，防目录穿越。

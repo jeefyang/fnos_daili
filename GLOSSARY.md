@@ -100,4 +100,4 @@ CGI 入口的固定路径前缀 `/cgi/ThirdParty/<appname>/index.cgi`。托管�
 
 ## 站点图标 (Site icon)
 
-目标站点自己声明的 favicon，和用户上传的图片一样作为 target 的自定义图标。只在用户点按“从站点获取”时出站：先读页面 `<link rel=icon|apple-touch-icon>`（按声明尺寸从大到小），再回退 `/favicon.ico`；接受 PNG/JPEG/ICO，ICO 取最大帧，源图最小 16×16，统一归一化成 256 与 64 两档 PNG。抓取复用目标的 DNS 设置与地址拦截。
+目标站点自己声明的 favicon，和用户上传的图片一样作为 target 的自定义图标。只在用户点按“从站点获取”时出站：先读 web app manifest 的 `icons[]`（最大者优先），再读 `<link rel=icon|apple-touch-icon>`（按声明尺寸从大到小），再试 `/apple-touch-icon.png`，最后回退 `/favicon.ico`；接受 PNG/JPEG/ICO，ICO 取最大帧，源图最小 16×16，统一归一化成 256 与 64 两档 PNG（小图用 Mitchell 核放大）。抓取复用目标的 DNS 设置与地址拦截。

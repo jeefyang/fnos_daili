@@ -106,6 +106,107 @@ func TestFetchPrefersDeclaredSize(t *testing.T) {
 	}
 }
 
+func TestFetchPrefersManifestIcon(t *testing.T) {
+	var mu sync.Mutex
+	var order []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<link rel="manifest" href="/site.webmanifest">` +
+			`<link rel="icon" href="/small.png" sizes="32x32">`))
+	})
+	mux.HandleFunc("/site.webmanifest", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/manifest+json")
+		_, _ = w.Write([]byte(`{"icons":[{"src":"/icon-512.png","sizes":"512x512","type":"image/png"},` +
+			`{"src":"/icon-192.png","sizes":"192x192","type":"image/png"}]}`))
+	})
+	serve := func(path string, side int) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			order = append(order, path)
+			mu.Unlock()
+			_, _ = w.Write(pngBytes(t, side))
+		}
+	}
+	mux.HandleFunc("/icon-512.png", serve("/icon-512.png", 512))
+	mux.HandleFunc("/icon-192.png", serve("/icon-192.png", 192))
+	mux.HandleFunc("/small.png", serve("/small.png", 32))
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	if _, err := Fetch(context.Background(), srv.Client(), srv.URL); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(order) == 0 || order[0] != "/icon-512.png" {
+		t.Fatalf("fetch order = %v, want /icon-512.png first", order)
+	}
+}
+
+func TestFetchSkipsSVGManifestIcon(t *testing.T) {
+	var mu sync.Mutex
+	var order []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<link rel="manifest" href="/m.json">`))
+	})
+	mux.HandleFunc("/m.json", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"icons":[{"src":"/big.svg","sizes":"any","type":"image/svg+xml"},` +
+			`{"src":"/png-128.png","sizes":"128x128","type":"image/png"}]}`))
+	})
+	serve := func(path string, side int) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			order = append(order, path)
+			mu.Unlock()
+			_, _ = w.Write(pngBytes(t, side))
+		}
+	}
+	mux.HandleFunc("/big.svg", serve("/big.svg", 64))
+	mux.HandleFunc("/png-128.png", serve("/png-128.png", 128))
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	if _, err := Fetch(context.Background(), srv.Client(), srv.URL); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(order) == 0 || order[0] != "/png-128.png" {
+		t.Fatalf("fetch order = %v, want /png-128.png first", order)
+	}
+}
+
+func TestFetchAppleTouchIconWithoutLink(t *testing.T) {
+	var mu sync.Mutex
+	var order []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("<html><head><title>nothing</title></head></html>"))
+	})
+	serve := func(path string, side int) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			order = append(order, path)
+			mu.Unlock()
+			_, _ = w.Write(pngBytes(t, side))
+		}
+	}
+	mux.HandleFunc("/apple-touch-icon.png", serve("/apple-touch-icon.png", 180))
+	mux.HandleFunc("/favicon.ico", serve("/favicon.ico", 64))
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	if _, err := Fetch(context.Background(), srv.Client(), srv.URL); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(order) == 0 || order[0] != "/apple-touch-icon.png" {
+		t.Fatalf("fetch order = %v, want /apple-touch-icon.png first", order)
+	}
+}
+
 func TestFetchFallsBackToFaviconICO(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

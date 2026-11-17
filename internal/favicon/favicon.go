@@ -5,6 +5,7 @@ package favicon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -42,17 +43,25 @@ func Fetch(ctx context.Context, client *http.Client, origin string) (icon.Set, e
 	if err != nil || base.Host == "" || (base.Scheme != "http" && base.Scheme != "https") {
 		return zero, fmt.Errorf("favicon: invalid origin %q", origin)
 	}
-	var candidates []string
+	var candidates []linkCandidate
 	page, pageErr := get(ctx, client, base.String(), MaxHTMLBytes, "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1")
 	if pageErr == nil {
+		// A web app manifest usually points at the artwork the site actually
+		// ships (192px/512px), which beats upscaling a 16px favicon.
+		candidates = append(candidates, manifestIcons(ctx, client, page, base)...)
 		candidates = append(candidates, iconLinks(page, base)...)
 	}
-	candidates = append(candidates, base.ResolveReference(&url.URL{Path: "/favicon.ico"}).String())
+	// Sites that ship a touch icon without linking it from the markup.
+	for _, path := range []string{"/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"} {
+		candidates = append(candidates, linkCandidate{url: base.ResolveReference(&url.URL{Path: path}).String(), score: 180 * 180})
+	}
+	candidates = append(candidates, linkCandidate{url: base.ResolveReference(&url.URL{Path: "/favicon.ico"}).String()})
+	candidates = dedupeCandidates(candidates)
 
 	var lastErr error
 	tried := 0
 	for _, cand := range candidates {
-		data, err := get(ctx, client, cand, MaxIconBytes, "image/*")
+		data, err := get(ctx, client, cand.url, MaxIconBytes, "image/*")
 		if err != nil {
 			lastErr = err
 			tried++
@@ -60,7 +69,7 @@ func Fetch(ctx context.Context, client *http.Client, origin string) (icon.Set, e
 		}
 		set, err := icon.NormalizeFavicon(data)
 		if err != nil {
-			lastErr = fmt.Errorf("%s: %w", redactURL(cand), err)
+			lastErr = fmt.Errorf("%s: %w", redactURL(cand.url), err)
 			tried++
 			continue
 		}
@@ -134,7 +143,7 @@ type linkCandidate struct {
 
 // iconLinks returns absolute candidate URLs ordered by declared size, so a
 // 256px apple-touch-icon wins over a 16px favicon.
-func iconLinks(page []byte, base *url.URL) []string {
+func iconLinks(page []byte, base *url.URL) []linkCandidate {
 	var out []linkCandidate
 	seen := make(map[string]bool)
 	for _, m := range linkTagRE.FindAllSubmatch(page, -1) {
@@ -162,12 +171,100 @@ func iconLinks(page []byte, base *url.URL) []string {
 		seen[key] = true
 		out = append(out, linkCandidate{url: key, score: iconScore(rel, attrs["sizes"])})
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].score > out[j].score })
-	urls := make([]string, len(out))
-	for i, c := range out {
-		urls[i] = c.url
+	return out
+}
+
+// manifestIcons reads <link rel="manifest"> and returns the largest icons the
+// web app manifest declares.
+func manifestIcons(ctx context.Context, client *http.Client, page []byte, base *url.URL) []linkCandidate {
+	var out []linkCandidate
+	seen := make(map[string]bool)
+	for _, m := range linkTagRE.FindAllSubmatch(page, -1) {
+		attrs := parseAttrs(m[1])
+		if !isManifestRel(attrs["rel"]) {
+			continue
+		}
+		href := strings.TrimSpace(attrs["href"])
+		if href == "" {
+			continue
+		}
+		ref, err := url.Parse(href)
+		if err != nil {
+			continue
+		}
+		abs := base.ResolveReference(ref)
+		if abs.Scheme != "http" && abs.Scheme != "https" {
+			continue
+		}
+		if seen[abs.String()] {
+			continue
+		}
+		seen[abs.String()] = true
+		body, err := get(ctx, client, abs.String(), MaxHTMLBytes, "application/manifest+json,application/json;q=0.9,*/*;q=0.1")
+		if err != nil {
+			continue
+		}
+		var doc webManifest
+		if err := json.Unmarshal(body, &doc); err != nil {
+			continue
+		}
+		for _, ic := range doc.Icons {
+			src := strings.TrimSpace(ic.Src)
+			if src == "" {
+				continue
+			}
+			if typ := strings.ToLower(strings.TrimSpace(ic.Type)); strings.Contains(typ, "svg") || strings.Contains(typ, "xml") {
+				continue
+			}
+			if strings.HasSuffix(strings.ToLower(strings.SplitN(src, "?", 2)[0]), ".svg") {
+				continue
+			}
+			ref, err := url.Parse(src)
+			if err != nil {
+				continue
+			}
+			iconURL := base.ResolveReference(ref)
+			if iconURL.Scheme != "http" && iconURL.Scheme != "https" {
+				continue
+			}
+			out = append(out, linkCandidate{url: iconURL.String(), score: iconScore("icon", ic.Sizes)})
+		}
 	}
-	return urls
+	return out
+}
+
+// webManifest is the part of a web app manifest that carries icon artwork.
+type webManifest struct {
+	Icons []struct {
+		Src   string `json:"src"`
+		Sizes string `json:"sizes"`
+		Type  string `json:"type"`
+	} `json:"icons"`
+}
+
+func isManifestRel(rel string) bool {
+	for _, token := range strings.Fields(strings.ToLower(rel)) {
+		if token == "manifest" {
+			return true
+		}
+	}
+	return false
+}
+
+// dedupeCandidates drops repeated URLs and orders what is left by declared
+// size, keeping the first occurrence of each URL.
+func dedupeCandidates(in []linkCandidate) []linkCandidate {
+	seen := make(map[string]bool, len(in))
+	out := make([]linkCandidate, 0, len(in))
+	for _, c := range in {
+		if seen[c.url] {
+			continue
+		}
+		seen[c.url] = true
+		out = append(out, c)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].score > out[j].score })
+	return out
 }
 
 func parseAttrs(raw []byte) map[string]string {

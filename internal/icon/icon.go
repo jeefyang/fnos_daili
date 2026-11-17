@@ -68,15 +68,16 @@ func normalize(data []byte, minSide int, allowICO bool) (Set, error) {
 	origin := image.Pt(b.Min.X+(b.Dx()-side)/2, b.Min.Y+(b.Dy()-side)/2)
 	stddraw.Draw(crop, crop.Bounds(), src, origin, stddraw.Src)
 
-	// Downscales keep bicubic detail; upscales (small site icons) use bilinear,
-	// because CatmullRom's overshoot paints light squares along the outline of
-	// a 16/32px icon.
-	scaler := xdraw.CatmullRom
+	// Downscales keep bicubic detail. Upscales (16/32px site icons) go through
+	// Mitchell: CatmullRom overshoots into bright squares along the outline,
+	// and bilinear keeps the source pixel grid as hard stair steps.
+	var icon256 *image.NRGBA
 	if side < 256 {
-		scaler = xdraw.BiLinear
+		icon256 = resampleUpscale(crop, 256, 256)
+	} else {
+		icon256 = image.NewNRGBA(image.Rect(0, 0, 256, 256))
+		xdraw.CatmullRom.Scale(icon256, icon256.Bounds(), crop, crop.Bounds(), stddraw.Src, nil)
 	}
-	icon256 := image.NewNRGBA(image.Rect(0, 0, 256, 256))
-	scaler.Scale(icon256, icon256.Bounds(), crop, crop.Bounds(), stddraw.Src, nil)
 	snapAlpha(icon256)
 	icon64 := image.NewNRGBA(image.Rect(0, 0, 64, 64))
 	xdraw.CatmullRom.Scale(icon64, icon64.Bounds(), icon256, icon256.Bounds(), stddraw.Src, nil)
