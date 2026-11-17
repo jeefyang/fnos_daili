@@ -456,6 +456,7 @@
     state.selected = {};
     if (window.__lastList) renderList(window.__lastList);
     var failed = [];
+    var done = 0;
     var chain = Promise.resolve();
     ids.forEach(function (id) {
       chain = chain.then(function () {
@@ -464,19 +465,21 @@
         }).then(function (op) {
           if (op && op.status === 'failed') failed.push(op.error || '未知错误');
           delete state.busy[id];
-          if (window.__lastList) renderList(window.__lastList);
+          done++;
+          // Refresh after every single delete so finished rows leave the table
+          // immediately instead of lingering as "running" until the batch ends.
+          return loadListCached();
         }).catch(function (err) {
           failed.push(msgOf(err));
           delete state.busy[id];
-          if (window.__lastList) renderList(window.__lastList);
+          done++;
+          return loadListCached().catch(function () {});
         });
       });
     });
     return chain.then(function () {
-      return loadListCached();
-    }).then(function () {
       if (failed.length) toast('删除完成，但有 ' + failed.length + ' 个失败：' + failed[0], true);
-      else toast(ids.length > 1 ? '已删除 ' + ids.length + ' 个应用' : '已删除');
+      else toast(done > 1 ? '已删除 ' + done + ' 个应用' : '已删除');
     });
   }
 
