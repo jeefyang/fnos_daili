@@ -27,6 +27,18 @@
   `https://<appname 点→连字符>-main.<域名>/`。需要该应用已在 FN Connect 后台发布，否则子域返回 403。
   详见 `docs/research/fnos-fnconnect-entry-url.md`。
 
+## NAS 侧 DNS 不可用（易误判为端口不通）
+
+现象：目标填域名（如 `https://chrome.5520183.xyz`）时，托管台“测试连通”报 `resolve_failed` 或
+`dns_timeout 10001ms`，安装后打开入口得到代理自己的 502；但同一域名在用户电脑上能打开。
+
+根因：测试与反代都由 NAS 上的进程执行，用的是 NAS 的解析器。该机 `getent hosts <任意公网域名>` 无输出、
+`/etc/resolv.conf` 指向的内网 DNS（`192.168.123.1`）不回答公网查询。
+
+处理：在设置或目标表单里填一个可用的 DNS（如 `223.5.5.5`），生成时烤进 `app/config.json` 的 `dns`；
+代理用该解析器解析、再逐个 IP 做目标拦截后拨号，Host/SNI 仍用域名。浏览器能打开只说明用户侧能解析，
+不能作为 NAS 侧连通性的证据。
+
 ## 两个真实故障及根因
 
 1. **桌面窗口只有标题、内容空白**：`app/ui/config` 的入口写了 `"port": ""`。飞牛把“存在 port 字段”

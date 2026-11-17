@@ -90,6 +90,10 @@ fnOS 入口的一种运行方式：`app/ui/config` 的 `url` 写成 `/cgi/ThirdP
 
 CGI 入口的固定路径前缀 `/cgi/ThirdParty/<appname>/index.cgi`。托管台的 CGI 层用它截路径；代理应用走独立端口，入口前缀为空，不参与 Cookie/Location 改写。
 
+## DNS 服务器 (DNS server)
+
+反代模式下解析目标域名的解析器，按 IP 字面量配置（端口固定 53），空表示用 NAS 的系统解析器。只影响出站解析，不改 Host/SNI；直连模式不解析目标，因此不用它。
+
 ## 操作 (Operation)
 
 托管台发起的一次异步变更，取值为 `install`、`upgrade`、`reinstall`、`uninstall`、`rollback`、`start` 之一。记录在托管台状态的 `last_operation` 里，界面按 operation id 轮询进度；同一目标同时只允许一个变更操作。
