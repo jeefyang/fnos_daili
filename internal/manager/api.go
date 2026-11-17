@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jeefyang/fnos_daili/internal/cli"
+	"github.com/jeefyang/fnos_daili/internal/dnsx"
 	"github.com/jeefyang/fnos_daili/internal/guard"
 	"github.com/jeefyang/fnos_daili/internal/spec"
 	"github.com/jeefyang/fnos_daili/internal/state"
@@ -412,6 +413,7 @@ func (s *Service) handleTestTarget(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		TargetURL string `json:"target_url"`
 		Mode      string `json:"mode"`
+		DNSServer string `json:"dns_server"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
@@ -436,6 +438,17 @@ func (s *Service) handleTestTarget(w http.ResponseWriter, r *http.Request) {
 	res := map[string]any{"reachable": false, "status": 0, "elapsed_ms": 0, "error": "", "detail": ""}
 	if body.Mode != "direct" {
 		g := guard.Guard{}
+		dnsServer := strings.TrimSpace(body.DNSServer)
+		if dnsServer == "" {
+			dnsServer = s.Settings().DNSServer
+		}
+		if dnsServer != "" {
+			if err := dnsx.Validate(dnsServer); err != nil {
+				writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+				return
+			}
+			g.Resolver = dnsx.New(dnsServer)
+		}
 		if err := g.CheckHost(ctx, u.Hostname(), port); err != nil {
 			res["error"], res["detail"] = targetCheckError(err)
 			s.logger.Printf("test-target %s: %s (%s)", norm, res["error"], res["detail"])

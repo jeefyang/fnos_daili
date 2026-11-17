@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jeefyang/fnos_daili/internal/dnsx"
 	"github.com/jeefyang/fnos_daili/internal/guard"
 	"github.com/jeefyang/fnos_daili/internal/proxyconfig"
 	"golang.org/x/crypto/bcrypt"
@@ -45,12 +46,13 @@ type Options struct {
 }
 
 type Handler struct {
-	cfg    *proxyconfig.Config
-	target *url.URL
-	prefix string
-	guard  *guard.Guard
-	proxy  *httputil.ReverseProxy
-	logger *log.Logger
+	cfg      *proxyconfig.Config
+	target   *url.URL
+	prefix   string
+	guard    *guard.Guard
+	resolver guard.Resolver
+	proxy    *httputil.ReverseProxy
+	logger   *log.Logger
 }
 
 func New(cfg *proxyconfig.Config, opts Options) (*Handler, error) {
@@ -81,7 +83,11 @@ func New(cfg *proxyconfig.Config, opts Options) (*Handler, error) {
 	if cfg.Direct() {
 		return h, nil
 	}
-	h.guard = &guard.Guard{AllowLoopback: cfg.Guard.AllowLoopback, Resolver: opts.Resolver}
+	h.resolver = opts.Resolver
+	if h.resolver == nil && cfg.DNS != "" {
+		h.resolver = dnsx.New(cfg.DNS)
+	}
+	h.guard = &guard.Guard{AllowLoopback: cfg.Guard.AllowLoopback, Resolver: h.resolver}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	err = h.guard.CheckHost(ctx, target.Hostname(), targetPort(target))
@@ -219,11 +225,27 @@ func (h *Handler) guardDial(dialer *net.Dialer) func(context.Context, string, st
 		if err != nil {
 			return nil, err
 		}
-		if err := h.guard.CheckHost(ctx, host, port); err != nil {
-			h.logger.Printf("%s target blocked: %v", requestIDFrom(ctx), err)
+		addrs, err := h.guard.Resolve(ctx, host)
+		if err != nil {
+			h.logger.Printf("%s target resolve failed: %v", requestIDFrom(ctx), err)
 			return nil, err
 		}
-		return dialer.DialContext(ctx, network, address)
+		var lastErr error
+		for _, addr := range addrs {
+			if err := h.guard.CheckAddr(addr, port); err != nil {
+				h.logger.Printf("%s target blocked: %v", requestIDFrom(ctx), err)
+				return nil, err
+			}
+			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(addr.String(), portText))
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+		if lastErr == nil {
+			lastErr = fmt.Errorf("no addresses for %s", host)
+		}
+		return nil, lastErr
 	}
 }
 

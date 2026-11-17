@@ -58,6 +58,7 @@ func TestNormalizeProxySpecRejectsInvalid(t *testing.T) {
 		{"long appname", func(s *ProxySpec) { s.AppName = strings.Repeat("a", 33) }, "appname"},
 		{"bad appname start", func(s *ProxySpec) { s.AppName = "-bad.name" }, "appname"},
 		{"reserved appname", func(s *ProxySpec) { s.AppName = ManagerAppName }, "appname"},
+		{"bad dns server", func(s *ProxySpec) { s.DNSServer = "223.5.5.5:53" }, "dns_server"},
 		{"missing display name", func(s *ProxySpec) { s.DisplayName = "" }, "display_name"},
 		{"display newline", func(s *ProxySpec) { s.DisplayName = "a\nb" }, "display_name"},
 		{"display too long", func(s *ProxySpec) { s.DisplayName = strings.Repeat("家", 33) }, "display_name"},

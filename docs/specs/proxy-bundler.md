@@ -107,6 +107,7 @@ type TargetSpec struct {
     InstallVolume  string     `json:"install_volume"` // 默认 default-volume
     SkipTLSVerify  bool       `json:"skip_tls_verify"`// 仅 reverse + https
     AllowLoopback  bool       `json:"allow_loopback"` // 仅 reverse
+    DNSServer      string     `json:"dns_server,omitempty"` // 仅 reverse；留空用系统解析器
     BasicAuth      *BasicAuth `json:"basic_auth,omitempty"`
 }
 
@@ -133,6 +134,7 @@ type BasicAuth struct {
 | `basic_auth` | 仅 reverse；用户名 1–64 字节，密码 8–72 字节；direct 下出现即校验失败 |
 | `skip_tls_verify` | 仅 reverse + https 有意义；http 下忽略 |
 | `allow_loopback` | 仅 reverse；打开只放行回环，不放行链路本地/多播/端口拒绝 |
+| `dns_server` | 仅 reverse；空串 = 用系统解析器；非空必须是 IP 字面量（端口固定 53，不接受 `host:port` 或主机名）；该解析器同时用于目标拦截的解析与出站拨号，TLS SNI / 证书校验仍用原主机名 |
 
 图标不属于 `ProxySpec`，而是 target 的可选附件：API 输入用 `icon_data`（base64 data URL，PNG/JPEG，≤2MB，≥64×64，≤16M 像素）或 `remove_icon`（二者互斥），输出用 `has_icon`。托管台在保存时把图统一裁成 256 与 64 两档 PNG，存 state 的 `custom_icon_64` / `custom_icon_256`；生成包时替换内置图标。
 
@@ -167,6 +169,7 @@ type BasicAuth struct {
   "appname": "proxy.home.9f3a",
   "mode": "reverse",
   "target": "http://192.168.1.10:8123",
+  "dns": "223.5.5.5",
   "tls": { "skip_verify": false },
   "guard": { "allow_loopback": false },
   "basic_auth": {
@@ -184,6 +187,7 @@ type BasicAuth struct {
 
 - `schema`、`appname`、`mode`、`target` 必填；`appname` 只作身份标识，不再拼入口前缀；`mode` 只允许 `reverse`/`direct`。
 - 端口不写进 `config.json`；由 `cmd/main` 的 `--listen` 传入，值来自生成时的分配。
+- `dns` 可选，只在 reverse 出现；值是 IP 字面量，端口固定 53；缺省或空串用系统解析器。代理用它解析目标域名，也用它做目标拦截的地址解析；拨号连解析出的 IP，Host/SNI 仍是目标主机名。
 - `basic_auth` 只在 reverse 出现；direct 出现即启动失败。
 - `timeouts` 缺省用上面的值；解析失败即启动失败。
 - 未知键忽略（向前兼容）。
@@ -661,15 +665,15 @@ esac
 | POST | `/api/targets/{id}/test-target` | 测试连通性；不阻断保存 |
 | GET | `/api/appnames/check?appname=` | `{ok, reason}`；查 state + list |
 | GET | `/api/volumes` | `appcenter-cli default-volume` + 常见卷 |
-| GET | `/api/settings` | 全局设置 `{appname_prefix, appname_suffix}` |
-| PUT | `/api/settings` | 校验并保存全局前缀/后缀；不改已创建 target |
+| GET | `/api/settings` | 全局设置 `{appname_prefix, appname_suffix, dns_server}` |
+| PUT | `/api/settings` | 校验并保存全局前缀/后缀与默认 DNS；不改已创建 target |
 | GET | `/api/network` | `{client_ip, lan, known}`；`lan` 未知时为 null |
 | GET | `/api/operations/{id}` | 异步操作进度 |
 
 - `apply`/`delete`/`rollback` 立即返回 `202 {operation_id}`；进度写 state 的 `last_operation`，前端轮询直到终态再刷新列表。
-- `settings` 的 prefix/suffix 各 ≤16 字节、合计 ≤24，只允许 ASCII 字母数字 `._-`；prefix 非空时首字符必须是字母或数字；用 `prefix+"app"+suffix` 过一遍 appname 校验。保存只影响新建时建议，已创建的 appname 已锁定。
+- `settings` 的 prefix/suffix 各 ≤16 字节、合计 ≤24，只允许 ASCII 字母数字 `._-`；prefix 非空时首字符必须是字母或数字；用 `prefix+"app"+suffix` 过一遍 appname 校验。保存只影响新建时建议，已创建的 appname 已锁定。`dns_server` 是新建应用时预填的默认解析器（空 = 系统），只影响之后新建或重新保存的 target，不自动重装已装应用。
 - `network` 从 `X-Daili-Client-IP`（CGI shim 写入）→ `X-Forwarded-For` → `X-Real-IP` → `RemoteAddr` 取第一个合法 IP；私网/回环/链路本地为 `lan=true`，公网为 `false`，取不到为 null。仅用于入口提示，不参与鉴权。
-- `test-target` 用同一目标拦截；返回 `{reachable, status, elapsed_ms, error, detail}`；`error` 是稳定类别（`dns_timeout`、`dns_failure`、`connect_failed`、`loopback`、`port` 等），`detail` 是截断到 160 字节、去掉换行的底层错误，只用于排障，不含口令与请求头。测试超时 10s，掩码直连模式跳过目标拦截。
+- `test-target` 用同一目标拦截；请求体可带 `dns_server`（该目标表单里的值），缺省回退全局设置；返回 `{reachable, status, elapsed_ms, error, detail}`；`error` 是稳定类别（`dns_timeout`、`dns_failure`、`connect_failed`、`loopback`、`port` 等），`detail` 是截断到 160 字节、去掉换行的底层错误，只用于排障，不含口令与请求头。测试超时 10s，掩码直连模式跳过目标拦截。
 - `appnames/check` 规则：正则、保留名、state 冲突、`appcenter-cli list` 冲突。
 - 图标接口只返回 state 里的 PNG 字节；`size=64` 取 64 档，缺省 256 档；`Cache-Control: no-store`，避免换图后浏览器继续用旧图。
 - 创建/更新请求体上限 8MiB，容纳 2MiB 图片的 base64 与 JSON 开销。
@@ -758,8 +762,8 @@ T2 的“端口 bind 预检”恢复：代理入口使用独立端口，分配�
 
 1. **目标**：target_url 输入；test-target 按钮（非阻断）；格式错误才禁用下一步；反代模式显示“目标拦截”提示。
 2. **应用信息**：display_name、appname（编辑时锁定在应用信息页；目标地址在第 1 步可直接改。预填 `全局前缀 + slug + 全局后缀 + "." + 4hex`，默认前缀 `proxy.`；可改，异步 check）、description、图标上传（PNG/JPEG，≤2MB，≥64×64；预览 64 档；可恢复默认；编辑时显示当前自定义图标）、version（高级折叠，默认 1.0.0）。新建与编辑用同一个向导，但入口分开：新建从空白开始并停在第 1 步；编辑回填已有 target 后也停在第 1 步（目标可二次编辑），appname 在应用信息页锁定，第 1 步给出“保存后会重新生成并重装，appname 与入口端口不变”的提示；左侧步骤栏可回到已走过的步骤，向前仍逐步骤校验。不再有“新建/编辑”页签。
-3. **入口与高级**：mode（reverse/direct）、ui_type（url/iframe）、all_users（默认 false）、no_display、entry_title、install_volume、skip_tls_verify（仅 https+reverse）、allow_loopback（仅 reverse）、Basic Auth（开关 + 用户名/密码，仅 reverse）；端口只读展示（新建时“生成时自动分配”，编辑时显示已分配端口）。
-4. **确认与生成**：摘要含图标来源（自定义/默认）、入口端口与最终 URL；生成按钮；进度 5 步（校验 → 生成包 → 安装 → 启动 → 完成）；失败停在对应步骤，提供下载 fpk、查看日志、重试；成功后 toast 提示并自动回到列表。
+3. **入口与高级**：mode（reverse/direct）、ui_type（url/iframe）、all_users（默认 false）、no_display、entry_title、install_volume、skip_tls_verify（仅 https+reverse）、allow_loopback（仅 reverse）、dns_server（仅 reverse；新建时预填全局设置，留空用系统解析器）、Basic Auth（开关 + 用户名/密码，仅 reverse）；端口只读展示（新建时“生成时自动分配”，编辑时显示已分配端口）。
+4. **确认与生成**：摘要含图标来源（自定义/默认）、DNS 服务器（系统默认或指定 IP）、入口端口与最终 URL；生成按钮；进度 5 步（校验 → 生成包 → 安装 → 启动 → 完成）；失败停在对应步骤，提供下载 fpk、查看日志、重试；成功后 toast 提示并自动回到列表。
 
 ### 10.2 列表
 
@@ -782,6 +786,7 @@ T2 的“端口 bind 预检”恢复：代理入口使用独立端口，分配�
 ### 11.1 单元测试
 
 - target 规范化表（IPv4/域名/IPv6/默认端口/path 拒绝/userinfo 拒绝）。
+- dns_server 校验（空/IPv4/IPv6 通过；host:port、主机名、非法 IP 拒绝）；settings 默认值进入新建 target 与包内 config.json。
 - appname/version/display/desc 校验。
 - 目标拦截 CIDR 表（含 IPv4-mapped、混合解析、allow_loopback、端口拒绝）。
 - Cookie Path 根路径分支（空/`/`/绝对路径/非法相对）；Location 同 origin/跨 origin/相对。

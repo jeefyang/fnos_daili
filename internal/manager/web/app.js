@@ -484,6 +484,7 @@
     $('no_display').checked = false;
     $('skip_tls_verify').checked = false;
     $('allow_loopback').checked = false;
+    $('dns_server').value = state.settings.dns_server || '';
     $('auth_on').checked = false;
     $('authFields').style.display = 'none';
     $('auth_user').value = '';
@@ -541,6 +542,7 @@
     $('no_display').checked = !!t.spec.no_display;
     $('skip_tls_verify').checked = !!t.spec.skip_tls_verify;
     $('allow_loopback').checked = !!t.spec.allow_loopback;
+    $('dns_server').value = t.spec.dns_server || '';
     if (t.spec.basic_auth) {
       $('auth_on').checked = true;
       $('auth_user').value = t.spec.basic_auth.username || '';
@@ -647,7 +649,7 @@
     if (err) return;
     var box = $('testResult');
     box.innerHTML = '<div class="alert info"><span class="spin"></span> 正在测试…</div>';
-    api('/api/test-target', { method: 'POST', body: { target_url: $('target_url').value.trim(), mode: state.mode } }).then(function (r) {
+    api('/api/test-target', { method: 'POST', body: { target_url: $('target_url').value.trim(), mode: state.mode, dns_server: $('dns_server').value.trim() } }).then(function (r) {
       if (r.reachable) {
         box.innerHTML = '<div class="alert ok">TCP 可达，耗时 ' + r.elapsed_ms + ' ms。保存时仍会再做一次目标检查。</div>';
       } else {
@@ -726,7 +728,8 @@
       file_types: [],
       install_volume: $('install_volume').value,
       skip_tls_verify: $('skip_tls_verify').checked,
-      allow_loopback: $('allow_loopback').checked
+      allow_loopback: $('allow_loopback').checked,
+      dns_server: $('dns_server').value.trim()
     };
     if (state.mode === 'reverse' && $('auth_on').checked) {
       input.basic_auth = { username: $('auth_user').value.trim(), password: $('auth_pass').value };
@@ -747,6 +750,7 @@
       ['入口', fnConnectHost() ? (d.appname ? entryURL(d.appname, state.editPort) : '生成时按 appname 生成应用子域') : (state.editPort ? entryURL(d.appname, state.editPort) : '生成时自动分配端口')],
       ['安装卷', '卷 ' + d.install_volume],
       ['图标', state.iconData ? '自定义（待保存）' : (state.iconRemove ? '恢复默认' : (state.editHasIcon ? '当前为自定义' : '默认'))],
+      ['DNS 服务器', d.dns_server || '系统默认'],
       ['Basic Auth', d.basic_auth ? ('开启 · ' + d.basic_auth.username) : '关闭'],
       ['跳过证书校验', d.skip_tls_verify ? '是' : '否'],
       ['允许本机目标', d.allow_loopback ? '是' : '否'],
@@ -882,15 +886,19 @@
     api('/api/settings').then(function (s) {
       state.settings.appname_prefix = s.appname_prefix || '';
       state.settings.appname_suffix = s.appname_suffix || '';
+      state.settings.dns_server = s.dns_server || '';
       var prefix = esc(state.settings.appname_prefix);
       var suffix = esc(state.settings.appname_suffix);
+      var dnsServer = esc(state.settings.dns_server);
       openModal('全局设置',
         '<p class="lede" style="margin-top:0">应用标识的公共前缀与后缀，只影响新建时的自动建议，不会改动已创建的应用。</p>' +
         '<div class="grid-2">' +
         '<div class="field"><label for="setPrefix">前缀</label><input id="setPrefix" class="input mono" maxlength="16" value="' + prefix + '" placeholder="proxy."><div class="help">最多 16 字节，只允许字母、数字、. _ -；非空时必须以字母或数字开头。</div></div>' +
         '<div class="field"><label for="setSuffix">后缀</label><input id="setSuffix" class="input mono" maxlength="16" value="' + suffix + '" placeholder=".prod"><div class="help">最多 16 字节；前后缀合计不超过 24 字节。</div></div>' +
         '</div>' +
-        '<div class="field"><label>预览</label><div id="affixPreview" class="mono faint"></div><div id="settingsError" class="error"></div></div>',
+        '<div class="field"><label>预览</label><div id="affixPreview" class="mono faint"></div></div>' +
+        '<div class="field"><label for="setDNS">默认 DNS 服务器</label><input id="setDNS" class="input mono" value="' + dnsServer + '" placeholder="留空用系统 DNS，例如 223.5.5.5"><div class="help">新建应用时预填到“入口与高级”；只影响之后新建或重新保存的应用，已装应用保持原值。</div></div>' +
+        '<div id="settingsError" class="error"></div>',
         [
           { label: '取消' },
           { label: '保存', cls: 'primary', onClick: function (close) { saveSettings(close); } }
@@ -906,7 +914,8 @@
   function settingsInput() {
     return {
       appname_prefix: $('setPrefix') ? $('setPrefix').value : '',
-      appname_suffix: $('setSuffix') ? $('setSuffix').value : ''
+      appname_suffix: $('setSuffix') ? $('setSuffix').value : '',
+      dns_server: $('setDNS') ? $('setDNS').value.trim() : ''
     };
   }
 
@@ -923,6 +932,8 @@
     api('/api/settings', { method: 'PUT', body: s }).then(function (out) {
       state.settings.appname_prefix = out.appname_prefix || '';
       state.settings.appname_suffix = out.appname_suffix || '';
+      state.settings.dns_server = out.dns_server || '';
+      if (!state.editId && !$('dns_server').value) $('dns_server').value = state.settings.dns_server || '';
       if (!state.editId && !state.appnameTouched && $('display_name').value.trim()) suggestAppName();
       toast('设置已保存');
       close();

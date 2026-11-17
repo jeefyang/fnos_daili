@@ -51,20 +51,9 @@ func (g *Guard) CheckHost(ctx context.Context, host string, port int) error {
 	if err := checkPort(port); err != nil {
 		return err
 	}
-	host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
-	if addr, err := netip.ParseAddr(host); err == nil {
-		return g.CheckAddr(addr, port)
-	}
-	resolver := g.Resolver
-	if resolver == nil {
-		resolver = net.DefaultResolver
-	}
-	addrs, err := resolver.LookupNetIP(ctx, "ip", host)
+	addrs, err := g.Resolve(ctx, host)
 	if err != nil {
-		return &ResolveError{Host: host, Err: err}
-	}
-	if len(addrs) == 0 {
-		return &ResolveError{Host: host, Err: errors.New("no addresses")}
+		return err
 	}
 	for _, addr := range addrs {
 		if err := g.CheckAddr(addr, port); err != nil {
@@ -72,6 +61,27 @@ func (g *Guard) CheckHost(ctx context.Context, host string, port int) error {
 		}
 	}
 	return nil
+}
+
+// Resolve turns host into checked-in-later addresses. IP literals pass
+// through; names use the guard's resolver or the system one.
+func (g *Guard) Resolve(ctx context.Context, host string) ([]netip.Addr, error) {
+	host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	if addr, err := netip.ParseAddr(host); err == nil {
+		return []netip.Addr{addr}, nil
+	}
+	resolver := g.Resolver
+	if resolver == nil {
+		resolver = net.DefaultResolver
+	}
+	addrs, err := resolver.LookupNetIP(ctx, "ip", host)
+	if err != nil {
+		return nil, &ResolveError{Host: host, Err: err}
+	}
+	if len(addrs) == 0 {
+		return nil, &ResolveError{Host: host, Err: errors.New("no addresses")}
+	}
+	return addrs, nil
 }
 
 func (g *Guard) CheckAddr(addr netip.Addr, port int) error {

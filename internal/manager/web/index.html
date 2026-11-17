@@ -159,6 +159,11 @@
               <label class="check"><input id="skip_tls_verify" type="checkbox"><span><span class="t">跳过 HTTPS 证书校验</span><span class="d">只对自签目标有效。</span></span></label>
               <label class="check"><input id="allow_loopback" type="checkbox"><span><span class="t">允许本机目标</span><span class="d">仅放行 127.0.0.1 / ::1，仍拒绝管理端口。</span></span></label>
             </div>
+            <div class="field" style="margin-top:12px">
+              <label for="dns_server">DNS 服务器</label>
+              <input id="dns_server" class="input mono" placeholder="留空用系统 DNS，例如 223.5.5.5">
+              <div class="help">目标域名由这一台解析器查询；只在反代模式生效。系统 DNS 不可用时填一个可达的 IP。</div>
+            </div>
           </div>
           <div class="field" id="reverseOnly2">
             <label class="check" style="margin-bottom:10px"><input id="auth_on" type="checkbox"><span><span class="t">启用 HTTP Basic Auth</span><span class="d">仅反代模式；口令只存 bcrypt 哈希。</span></span></label>

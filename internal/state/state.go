@@ -77,6 +77,9 @@ type Target struct {
 type Settings struct {
 	AppNamePrefix string `json:"appname_prefix"`
 	AppNameSuffix string `json:"appname_suffix"`
+	// DNSServer is the default resolver for new targets. Empty means the
+	// system resolver.
+	DNSServer string `json:"dns_server,omitempty"`
 }
 
 // DefaultSettings returns the initial appname affixes. The prefix keeps the

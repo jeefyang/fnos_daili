@@ -23,6 +23,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/jeefyang/fnos_daili/internal/cli"
+	"github.com/jeefyang/fnos_daili/internal/dnsx"
 	"github.com/jeefyang/fnos_daili/internal/icon"
 	"github.com/jeefyang/fnos_daili/internal/spec"
 	"github.com/jeefyang/fnos_daili/internal/state"
@@ -91,6 +92,7 @@ type SpecInput struct {
 	InstallVolume string     "json:\"install_volume\""
 	SkipTLSVerify bool       "json:\"skip_tls_verify\""
 	AllowLoopback bool       "json:\"allow_loopback\""
+	DNSServer     string     "json:\"dns_server,omitempty\""
 	BasicAuth     *AuthInput "json:\"basic_auth,omitempty\""
 	IconData      string     "json:\"icon_data,omitempty\""
 	RemoveIcon    bool       "json:\"remove_icon,omitempty\""
@@ -120,6 +122,7 @@ type SpecView struct {
 	InstallVolume string    "json:\"install_volume\""
 	SkipTLSVerify bool      "json:\"skip_tls_verify\""
 	AllowLoopback bool      "json:\"allow_loopback\""
+	DNSServer     string    "json:\"dns_server,omitempty\""
 	BasicAuth     *AuthView "json:\"basic_auth,omitempty\""
 	HasIcon       bool      "json:\"has_icon\""
 }
@@ -265,7 +268,7 @@ func loadOrCreateToken(path string) (string, error) {
 
 // Create validates and stores a new draft target.
 func (s *Service) Create(in SpecInput) (TargetView, error) {
-	sp, err := s.specFromInput(in, nil)
+	sp, err := s.specFromInput(in, nil, s.Settings().DNSServer)
 	if err != nil {
 		return TargetView{}, err
 	}
@@ -320,7 +323,11 @@ func (s *Service) Update(id string, in SpecInput) (TargetView, error) {
 		return TargetView{}, &spec.Error{Field: "appname", Message: "cannot be changed after creation"}
 	}
 	in.AppName = t.Spec.AppName
-	sp, err := s.specFromInput(in, t.Spec.BasicAuth)
+	defaultDNS := ""
+	if s.st.Settings != nil {
+		defaultDNS = s.st.Settings.DNSServer
+	}
+	sp, err := s.specFromInput(in, t.Spec.BasicAuth, defaultDNS)
 	if err != nil {
 		return TargetView{}, err
 	}
@@ -372,7 +379,7 @@ func (s *Service) allocatePortLocked() (int, error) {
 	return 0, &spec.Error{Field: "port", Message: fmt.Sprintf("no free port in %d-%d", spec.PortMin, spec.PortMax)}
 }
 
-func (s *Service) specFromInput(in SpecInput, existingAuth *spec.BasicAuth) (spec.ProxySpec, error) {
+func (s *Service) specFromInput(in SpecInput, existingAuth *spec.BasicAuth, defaultDNS string) (spec.ProxySpec, error) {
 	sp := spec.ProxySpec{
 		AppName:       strings.TrimSpace(in.AppName),
 		DisplayName:   strings.TrimSpace(in.DisplayName),
@@ -388,9 +395,13 @@ func (s *Service) specFromInput(in SpecInput, existingAuth *spec.BasicAuth) (spe
 		InstallVolume: strings.TrimSpace(in.InstallVolume),
 		SkipTLSVerify: in.SkipTLSVerify,
 		AllowLoopback: in.AllowLoopback,
+		DNSServer:     strings.TrimSpace(in.DNSServer),
 	}
 	if sp.InstallVolume == "" {
 		sp.InstallVolume = "1"
+	}
+	if sp.DNSServer == "" {
+		sp.DNSServer = defaultDNS
 	}
 	if in.BasicAuth != nil && strings.TrimSpace(in.BasicAuth.Username) != "" {
 		username := strings.TrimSpace(in.BasicAuth.Username)
@@ -514,7 +525,8 @@ func viewOf(t state.Target) TargetView {
 		Mode: t.Spec.Mode, EntryTitle: t.Spec.EntryTitle, UIType: t.Spec.UIType,
 		Port: t.Spec.Port, AllUsers: t.Spec.AllUsers, NoDisplay: t.Spec.NoDisplay, FileTypes: t.Spec.FileTypes,
 		InstallVolume: t.Spec.InstallVolume, SkipTLSVerify: t.Spec.SkipTLSVerify,
-		AllowLoopback: t.Spec.AllowLoopback, HasIcon: len(t.CustomIcon256) > 0,
+		AllowLoopback: t.Spec.AllowLoopback, DNSServer: t.Spec.DNSServer,
+		HasIcon: len(t.CustomIcon256) > 0,
 	}
 	if t.Spec.BasicAuth != nil {
 		sp.BasicAuth = &AuthView{Username: t.Spec.BasicAuth.Username, HasPassword: t.Spec.BasicAuth.PasswordHash != ""}
@@ -569,7 +581,14 @@ func normalizeSettings(in state.Settings) (state.Settings, error) {
 	if err := spec.ValidateAppName(prefix + "app" + suffix); err != nil {
 		return state.Settings{}, &spec.Error{Field: "settings", Message: "prefix and suffix do not form a valid appname: " + err.Error()}
 	}
-	return state.Settings{AppNamePrefix: prefix, AppNameSuffix: suffix}, nil
+	dnsServer := strings.TrimSpace(in.DNSServer)
+	if dnsServer != in.DNSServer {
+		return state.Settings{}, &spec.Error{Field: "dns_server", Message: "must not have leading or trailing whitespace"}
+	}
+	if err := dnsx.Validate(dnsServer); err != nil {
+		return state.Settings{}, &spec.Error{Field: "dns_server", Message: err.Error()}
+	}
+	return state.Settings{AppNamePrefix: prefix, AppNameSuffix: suffix, DNSServer: dnsServer}, nil
 }
 
 func checkAppNameAffix(field, value string, firstMustBeAlnum bool) error {

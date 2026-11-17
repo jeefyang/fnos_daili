@@ -311,6 +311,7 @@ type proxyConfig struct {
 	AppName   string          `json:"appname"`
 	Mode      string          `json:"mode"`
 	Target    string          `json:"target"`
+	DNS       string          `json:"dns,omitempty"`
 	TLS       *tlsConfig      `json:"tls,omitempty"`
 	Guard     *guardConfig    `json:"guard,omitempty"`
 	BasicAuth *spec.BasicAuth `json:"basic_auth,omitempty"`
@@ -323,6 +324,7 @@ func buildProxyConfig(s spec.ProxySpec) ([]byte, error) {
 		AppName: s.AppName,
 		Mode:    s.Mode,
 		Target:  s.TargetURL,
+		DNS:     s.DNSServer,
 		Timeouts: timeoutsConfig{
 			Dial:           "10s",
 			TLSHandshake:   "10s",

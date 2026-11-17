@@ -203,6 +203,45 @@ func TestUpdateTargetMarksReapplyAndRebuilds(t *testing.T) {
 	}
 }
 
+func TestDNSServerFlowsIntoPackageAndSettings(t *testing.T) {
+	s, _ := newTestService(t)
+	if _, err := s.SaveSettings(state.Settings{AppNamePrefix: "proxy.", DNSServer: "223.5.5.5"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Create(input())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Spec.DNSServer != "223.5.5.5" {
+		t.Fatalf("default dns_server = %q, want the settings value", got.Spec.DNSServer)
+	}
+	op, err := s.Apply(got.Spec.ID, "install")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done := waitOp(t, s, got.Spec.ID, op); done.Status != state.OpSucceeded {
+		t.Fatalf("install operation = %+v", done)
+	}
+	after, _ := s.Get(got.Spec.ID)
+	cfg := string(readAppTgzMember(t, readFPKMember(t, after.Runtime.PackagePath, "app.tgz"), "config.json"))
+	if !strings.Contains(cfg, "\"dns\": \"223.5.5.5\"") {
+		t.Fatalf("config.json is missing the dns server: %s", cfg)
+	}
+
+	in := input()
+	in.AppName = "daili.override"
+	in.DNSServer = "1.1.1.1"
+	over, err := s.Create(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if over.Spec.DNSServer != "1.1.1.1" {
+		t.Fatalf("explicit dns_server = %q", over.Spec.DNSServer)
+	}
+	if _, err := s.SaveSettings(state.Settings{AppNamePrefix: "proxy.", DNSServer: "not-an-ip"}); err == nil {
+		t.Fatal("invalid dns_server was accepted")
+	}
+}
 func TestCreateHashesPasswordAndNeverReturnsIt(t *testing.T) {
 	s, _ := newTestService(t)
 	in := input()

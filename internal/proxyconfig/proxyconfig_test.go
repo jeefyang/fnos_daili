@@ -49,6 +49,7 @@ func TestParseRejectsInvalid(t *testing.T) {
 		{"manager appname", strings.Replace(base, "proxy.home.9f3a", "daili.manager", 1)},
 		{"bad mode", strings.Replace(base, `"reverse"`, `"forward"`, 1)},
 		{"bad target", strings.Replace(base, "192.168.1.10:8123", "http://host/path", 1)},
+		{"bad dns", strings.Replace(base, `"reverse"`, `"reverse","dns":"223.5.5.5:53"`, 1)},
 		{"bad timeout", strings.Replace(base, `"reverse"`, `"reverse","timeouts":{"dial":"soon"}`, 1)},
 		{"zero timeout", strings.Replace(base, `"reverse"`, `"reverse","timeouts":{"dial":"0s"}`, 1)},
 		{"direct auth", strings.Replace(base, `"reverse"`, `"direct","basic_auth":{"username":"home","password_hash":"$2a$12$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0"}`, 1)},

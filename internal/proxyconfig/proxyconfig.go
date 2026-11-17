@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jeefyang/fnos_daili/internal/dnsx"
 	"github.com/jeefyang/fnos_daili/internal/spec"
 	"github.com/jeefyang/fnos_daili/internal/target"
 )
@@ -33,6 +34,7 @@ type Config struct {
 	AppName   string          `json:"appname"`
 	Mode      string          `json:"mode"`
 	Target    string          `json:"target"`
+	DNS       string          `json:"dns,omitempty"`
 	TLS       TLS             `json:"tls"`
 	Guard     Guard           `json:"guard"`
 	BasicAuth *spec.BasicAuth `json:"basic_auth,omitempty"`
@@ -76,6 +78,10 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("target: %w", err)
 	}
 	c.Target = normalized
+	c.DNS = strings.TrimSpace(c.DNS)
+	if err := dnsx.Validate(c.DNS); err != nil {
+		return err
+	}
 
 	if c.BasicAuth != nil {
 		if c.Mode == string(spec.ModeDirect) {

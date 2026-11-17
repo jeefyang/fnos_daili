@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/jeefyang/fnos_daili/internal/dnsx"
 	"github.com/jeefyang/fnos_daili/internal/target"
 )
 
@@ -48,6 +49,7 @@ type ProxySpec struct {
 	InstallVolume string     `json:"install_volume"`
 	SkipTLSVerify bool       `json:"skip_tls_verify"`
 	AllowLoopback bool       `json:"allow_loopback"`
+	DNSServer     string     `json:"dns_server,omitempty"`
 	BasicAuth     *BasicAuth `json:"basic_auth,omitempty"`
 }
 
@@ -139,6 +141,11 @@ func NormalizeProxySpec(in ProxySpec) (ProxySpec, error) {
 
 	if out.Port != 0 && !ValidPort(out.Port) {
 		return out, invalid("port", "must be between %d and %d", PortMin, PortMax)
+	}
+
+	out.DNSServer = strings.TrimSpace(out.DNSServer)
+	if err := dnsx.Validate(out.DNSServer); err != nil {
+		return out, invalid("dns_server", "%v", err)
 	}
 
 	if out.BasicAuth != nil {

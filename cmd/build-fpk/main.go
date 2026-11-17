@@ -42,6 +42,7 @@ func main() {
 		fileTypes     = flag.String("file-types", "", "comma-separated file types")
 		skipTLS       = flag.Bool("skip-tls-verify", false, "do not verify the target TLS certificate")
 		allowLoopback = flag.Bool("allow-loopback", false, "allow a loopback target (reverse mode only)")
+		dnsServer     = flag.String("dns", "", "DNS server for the target host (default: system resolver)")
 		basicUser     = flag.String("basic-auth-user", "", "optional HTTP Basic Auth username")
 		basicHash     = flag.String("basic-auth-hash", "", "bcrypt cost-12 password hash for Basic Auth")
 		platform      = flag.String("platform", "x86", "x86 (linux/amd64) or arm (linux/arm64)")
@@ -94,6 +95,7 @@ func main() {
 		FileTypes:     splitList(*fileTypes),
 		SkipTLSVerify: *skipTLS,
 		AllowLoopback: *allowLoopback,
+		DNSServer:     *dnsServer,
 		BasicAuth:     auth,
 	}
 	proxySpec, err = spec.NormalizeProxySpec(proxySpec)
