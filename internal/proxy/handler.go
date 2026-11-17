@@ -175,7 +175,9 @@ func (h *Handler) rewrite(pr *httputil.ProxyRequest) {
 	for _, key := range []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto"} {
 		pr.Out.Header.Del(key)
 	}
-	removeHopHeaders(pr.Out.Header)
+	// httputil.ReverseProxy already dropped the hop-by-hop headers and then
+	// restored Connection/Upgrade for protocol switches; stripping them again
+	// here would break WebSocket handshakes.
 	pr.Out.Header.Del(privateClientIPHeader)
 	pr.Out.Header.Del(privateEntryProto)
 
@@ -309,22 +311,6 @@ func (h *Handler) cookiePath(p string) string {
 		return h.prefix + p
 	}
 	return h.prefix + "/"
-}
-
-func removeHopHeaders(header http.Header) {
-	for _, value := range header.Values("Connection") {
-		for _, token := range strings.Split(value, ",") {
-			if token = strings.TrimSpace(token); token != "" {
-				header.Del(token)
-			}
-		}
-	}
-	for _, key := range []string{
-		"Connection", "Proxy-Connection", "Keep-Alive", "Proxy-Authenticate",
-		"Proxy-Authorization", "Te", "Trailer", "Transfer-Encoding", "Upgrade",
-	} {
-		header.Del(key)
-	}
 }
 
 func clientIP(r *http.Request) string {

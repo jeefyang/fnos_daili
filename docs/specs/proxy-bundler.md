@@ -850,17 +850,20 @@ T2 的“端口 bind 预检”恢复：代理入口使用独立端口，分配�
 ## 13. 已知限制
 
 1. 托管台管理员认证只依赖飞牛登录态 + `allUsers=false`；知道 URL 的普通登录用户可能访问。需要更强隔离时另开票。
-2. 托管台 CGI 入口不支持 WebSocket（Upgrade 返回 501）；代理应用走独立 TCP 端口，支持 WebSocket 与 SSE。
+2. 托管台 CGI 入口不支持 WebSocket（Upgrade 返回 501）；代理应用走独立 TCP 端口，WebSocket（实测握手 101）与 SSE（首字节即时）可用。
 3. 代理端口需要从局域网可达；飞牛防火墙若启用需放行 20000–29999，规则未实测。端口被其他进程占用时安装后启动失败，需换端口重建（删除后新建）。
 4. iframe 模式受目标 `X-Frame-Options`/`CSP frame-ancestors` 限制；默认 `url` 新标签可绕开。
 5. Basic Auth 在 HTTP 入口上明文传输；不负责加密；需要加密时用 HTTPS 入口或直连。
-6. 不做 HTML/绝对 URL 改写；独立端口让目标页的绝对路径（`/static/app.js`）自然落到代理 origin，因此不依赖站点使用相对路径。若目标页硬编码完整外部 URL，仍会指回外部地址。
+6. 不做 HTML/绝对 URL 改写；独立端口让目标页的绝对路径（`/static/app.js`）自然落到代理 origin，因此不依赖站点使用相对路径。**页面内指向目标自身 origin 的绝对 URL（`https://github.com/...`）不改写**：点击后浏览器直接去目标站，登录态与代理 origin 分裂成两份（实测 github 首页 94 处、grafana 62 处、cloudflare 22 处；HA/qBittorrent 这类相对路径为主的 app 不受影响）。
 7. 应用中心不校验 checksum/desktop_applaunchname 一致性（V1 实测）；正确性由生成器预检保证。
 8. `install-fpk` 不支持原地升级；升级必然卸载重装，期间入口短暂不可用。
 9. 非 root 无法调 CLI；托管台必须 run-as root。
 10. 每个应用一个入口；多入口/多目标 v1 不做。
 11. ARM 包需在 ARM 构建；v1 先发 x86。
 12. 目标 DNS 在创建时失败仍允许保存；运行时每次拨号重新解析并拦截。
+13. 自指绝对 URL 的取舍见第 6 条；`docs/research/compat-matrix.md` 记录各站点的实测计数。
+14. 目标返回跨 origin 的 3xx（如 gitlab.com → about.gitlab.com、http → 另一个 host 的 https）时不改 `Location`，浏览器直接离开入口；只有与目标完全同 scheme+host 的绝对 `Location` 才被改写成路径。
+15. 站点大量使用 CDN/多子域资源时（github 的 `github.githubassets.com`），资源由浏览器直连 CDN，不走代理；这不影响页面渲染，但代理看不到这部分流量。
 
 ## 14. 决议映射
 

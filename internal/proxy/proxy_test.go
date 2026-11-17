@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"net"
@@ -9,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jeefyang/fnos_daili/internal/proxyconfig"
 	"github.com/jeefyang/fnos_daili/internal/spec"
@@ -124,8 +126,13 @@ func TestReverseRewriteAndResponse(t *testing.T) {
 		if v.origin != target.URL || v.referer != target.URL+"/page" {
 			t.Fatalf("origin/referer = %+v", v)
 		}
-		if v.hop != "" || v.te != "" || v.upgrade != "" {
+		if v.hop != "" || v.upgrade != "" {
 			t.Fatalf("hop headers leaked: %+v", v)
+		}
+		// ReverseProxy re-adds "Te: trailers" on purpose so upstreams may use
+		// trailers; that is standard proxy behaviour and not a leak.
+		if v.te != "trailers" {
+			t.Fatalf("te = %q", v.te)
 		}
 	default:
 		t.Fatal("target not called")
@@ -284,6 +291,63 @@ func TestCGIStripAndForward(t *testing.T) {
 		}
 	default:
 		t.Fatal("inner not called")
+	}
+}
+
+func TestReverseProxyUpgradesWebSocket(t *testing.T) {
+	crlf := string([]byte{13, 10})
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			http.Error(w, "expected upgrade", http.StatusBadRequest)
+			return
+		}
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "no hijack", http.StatusInternalServerError)
+			return
+		}
+		conn, brw, err := hj.Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		brw.WriteString("HTTP/1.1 101 Switching Protocols" + crlf + "Upgrade: websocket" + crlf + "Connection: Upgrade" + crlf + crlf)
+		brw.Flush()
+	}))
+	defer target.Close()
+
+	h, err := New(reverseConfig(t, target.URL, true), Options{Root: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := httptest.NewServer(h)
+	defer s.Close()
+
+	conn, err := net.Dial("tcp", strings.TrimPrefix(s.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+	request := strings.Join([]string{
+		"GET /api/websocket HTTP/1.1",
+		"Host: " + strings.TrimPrefix(s.URL, "http://"),
+		"Upgrade: websocket",
+		"Connection: Upgrade",
+		"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+		"Sec-WebSocket-Version: 13",
+		"",
+		"",
+	}, crlf)
+	if _, err := conn.Write([]byte(request)); err != nil {
+		t.Fatal(err)
+	}
+	line, err := bufio.NewReader(conn).ReadString(byte(10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(line, "101") {
+		t.Fatalf("status line = %q", strings.TrimSpace(line))
 	}
 }
 
