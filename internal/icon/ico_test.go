@@ -323,22 +323,3 @@ func TestNormalizeFaviconKeepsTransparentEdges(t *testing.T) {
 		t.Fatalf("transparent edge alpha = %d, want 0", a)
 	}
 }
-
-func TestNormalizeFaviconSnapsEdgeAlpha(t *testing.T) {
-	set, err := NormalizeFavicon(icoWithDepth(t, 32, 32, 24, bmp24Payload(t, 32, 32, 12)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	img, err := png.Decode(bytes.NewReader(set.Icon256))
-	if err != nil {
-		t.Fatal(err)
-	}
-	nrgba := img.(*image.NRGBA)
-	for y := 0; y < 256; y++ {
-		for x := 0; x < 256; x++ {
-			if a := nrgba.NRGBAAt(x, y).A; a > 0 && a < 8 {
-				t.Fatalf("fringe alpha %d at (%d,%d)", a, x, y)
-			}
-		}
-	}
-}

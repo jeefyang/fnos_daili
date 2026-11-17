@@ -18,9 +18,9 @@ func solidNRGBA(w, h int, c color.NRGBA) *image.NRGBA {
 
 func TestResampleUpscaleKeepsFlatColour(t *testing.T) {
 	want := color.NRGBA{R: 0x2a, G: 0x7f, B: 0xc4, A: 0xff}
-	out := resampleUpscale(solidNRGBA(4, 4, want), 64, 64)
+	out := resample(solidNRGBA(4, 4, want), 64, 64)
 	if out == nil {
-		t.Fatal("resampleUpscale returned nil")
+		t.Fatal("resample returned nil")
 	}
 	if got := out.Bounds().Dx(); got != 64 {
 		t.Fatalf("width = %d, want 64", got)
@@ -46,9 +46,9 @@ func TestResampleUpscaleDoesNotOvershoot(t *testing.T) {
 			src.SetNRGBA(x, y, c)
 		}
 	}
-	out := resampleUpscale(src, 128, 128)
+	out := resample(src, 128, 128)
 	if out == nil {
-		t.Fatal("resampleUpscale returned nil")
+		t.Fatal("resample returned nil")
 	}
 	for y := 0; y < 128; y++ {
 		for x := 0; x < 128; x++ {
@@ -63,8 +63,8 @@ func TestResampleUpscaleDoesNotOvershoot(t *testing.T) {
 	}
 }
 
-func TestResampleUpscaleRejectsShrink(t *testing.T) {
-	if out := resampleUpscale(solidNRGBA(8, 8, color.NRGBA{A: 255}), 4, 4); out != nil {
-		t.Fatal("resampleUpscale should refuse to shrink")
+func TestResampleRejectsEmptyTarget(t *testing.T) {
+	if out := resample(solidNRGBA(8, 8, color.NRGBA{A: 255}), 0, 4); out != nil {
+		t.Fatal("resample should refuse an empty target")
 	}
 }

@@ -12,7 +12,6 @@ import (
 	"image/png"
 
 	_ "golang.org/x/image/bmp"
-	xdraw "golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
 )
 
@@ -77,20 +76,18 @@ func normalize(data []byte, minSide int, allowICO bool) (Set, error) {
 	origin := image.Pt(b.Min.X+(b.Dx()-side)/2, b.Min.Y+(b.Dy()-side)/2)
 	stddraw.Draw(crop, crop.Bounds(), src, origin, stddraw.Src)
 
-	// Downscales keep bicubic detail. Upscales (16/32px site icons) go through
-	// Mitchell: CatmullRom overshoots into bright squares along the outline,
-	// and bilinear keeps the source pixel grid as hard stair steps.
-	var icon256 *image.NRGBA
-	if side < 256 {
-		icon256 = resampleUpscale(crop, 256, 256)
-	} else {
-		icon256 = image.NewNRGBA(image.Rect(0, 0, 256, 256))
-		xdraw.CatmullRom.Scale(icon256, icon256.Bounds(), crop, crop.Bounds(), stddraw.Src, nil)
+	// Both directions go through the same premultiplied Mitchell resampler:
+	// CatmullRom overshoots into bright squares, plain interpolation over
+	// transparent pixels drags their black RGB into the outline, and forcing
+	// alpha to 0/255 turns a soft arc into a staircase.
+	icon256 := resample(crop, 256, 256)
+	if icon256 == nil {
+		return zero, fmt.Errorf("resize image to 256x256")
 	}
-	snapAlpha(icon256)
-	icon64 := image.NewNRGBA(image.Rect(0, 0, 64, 64))
-	xdraw.CatmullRom.Scale(icon64, icon64.Bounds(), icon256, icon256.Bounds(), stddraw.Src, nil)
-	snapAlpha(icon64)
+	icon64 := resample(icon256, 64, 64)
+	if icon64 == nil {
+		return zero, fmt.Errorf("resize image to 64x64")
+	}
 
 	out256, err := encodePNG(icon256)
 	if err != nil {
@@ -101,21 +98,6 @@ func normalize(data []byte, minSide int, allowICO bool) (Set, error) {
 		return zero, err
 	}
 	return Set{Icon64: out64, Icon256: out256}, nil
-}
-
-// snapAlpha pulls near-transparent and near-opaque pixels to the extremes.
-// Upscaling a small favicon leaves a fringe of alpha 1..7 pixels that reads as
-// a grey halo on the fnOS desktop; the RGB under those pixels is meaningless,
-// so dropping them sharpens the outline without touching the artwork.
-func snapAlpha(img *image.NRGBA) {
-	for i := 3; i < len(img.Pix); i += 4 {
-		switch a := img.Pix[i]; {
-		case a < 8:
-			img.Pix[i] = 0
-		case a > 247:
-			img.Pix[i] = 255
-		}
-	}
 }
 
 func decodeImage(data []byte, allowICO bool) (image.Image, int, int, error) {

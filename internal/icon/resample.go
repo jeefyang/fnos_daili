@@ -24,11 +24,12 @@ func (mitchell) at(x float64) float64 {
 	return 0
 }
 
-// resampleUpscale enlarges src to w x h with the Mitchell kernel. Both
-// dimensions must be at least the source dimensions.
-func resampleUpscale(src *image.NRGBA, w, h int) *image.NRGBA {
+// resample converts src to w x h with the Mitchell kernel and works in
+// premultiplied float RGBA, so a transparent border contributes no colour and
+// no dark ring appears along the outline on either up- or downscaling.
+func resample(src *image.NRGBA, w, h int) *image.NRGBA {
 	sw, sh := src.Bounds().Dx(), src.Bounds().Dy()
-	if w < sw || h < sh || w <= 0 || h <= 0 {
+	if w <= 0 || h <= 0 || sw <= 0 || sh <= 0 {
 		return nil
 	}
 
