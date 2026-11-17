@@ -85,6 +85,27 @@ sudo appcenter-cli list
 
 安装成功的标志是输出含 `Installation complete`，且 `list` 中状态变为 `running`。`install-local` 在已验证的 fnOS 版本上不可用（10237 + panic），不要使用。
 
+## 用托管台建代理
+
+打开飞牛桌面上的“代理打包器”图标（CGI 入口，也可直接访问
+`https://<NAS>/cgi/ThirdParty/daili.manager/index.cgi/`），点“新建代理”：
+
+1. 填目标 origin（如 `http://192.168.123.200:8021`），可点“测试连通”先探一次 TCP；
+2. 填显示名称，appname 会按设置里的全局前后缀自动建议，可改；可上传应用图标（PNG/JPEG，≥64×64，≤2MB）；
+3. 选模式（反向代理 / 直连 302）与可见性，端口由托管台从 20000–29999 分配；
+4. 点“生成并安装”，托管台会打包、调用 `appcenter-cli install-fpk` 并等它 `running`，成功后自动回列表。
+
+列表里的入口可直接点开：
+
+- 局域网/自定义域名：`http://<NAS>:<端口>/`；
+- 经 FN Connect 公网访问：`https://<appname 点→连字符>-main.<域名>/`
+  （需先在 FN Connect 里发布该应用，规则见 [docs/research/fnos-fnconnect-entry-url.md](docs/research/fnos-fnconnect-entry-url.md)）。
+
+编辑已有应用会从第 1 步开始，目标地址可改；保存即重新打包并重装，appname 与入口端口保持不变。
+
+真机部署路径、两个历史故障（空白窗口 / CGI 500）与排障顺序见
+[docs/research/manager-deployment.md](docs/research/manager-deployment.md)。
+
 ## 仓库结构
 
 ```text

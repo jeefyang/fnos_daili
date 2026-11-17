@@ -1,0 +1,55 @@
+# 托管台真机部署记录与排障
+
+记录日期：2026-11-16/17。对象：`daili.manager` 在真实飞牛（fnOS）上的安装、启动、入口与踩过的坑。
+只记事实与结论，机制细节见 `docs/specs/proxy-bundler.md`。
+
+## 真机路径与形态
+
+| 项 | 实际值 |
+| --- | --- |
+| 应用部署目录 `TRIM_APPDEST` | `/vol1/@appcenter/daili.manager`，只有 `bin/`、`ui/` |
+| 运行数据目录 `TRIM_PKGVAR` | `/vol1/@appdata/daili.manager`（`manager.sock`、`manager.pid`、`manager.log`、`state.json`、`packages/`） |
+| 守护进程 | `bin/manager --mode serve --socket /vol1/@appdata/daili.manager/manager.sock`，以 root 运行 |
+| socket | `srw-rw----`（0660），`ss -xl` 可见 LISTEN，`ss -ltnp` 无该应用 |
+| 入口 shim | `/vol1/@appcenter/daili.manager/ui/index.cgi`，安装时写入 |
+| 应用中心 CLI | `/usr/local/bin/appcenter-cli`（v1.0.2，root:root 755），非 root 调用会因 `/run/trim_app_cgi/rpcbroker` 权限 panic |
+
+`cmd/` 下的脚本在安装时被应用中心消费，**不会落到部署目录**；任何“安装后再执行 `$DESK/cmd/main`”的写法都会
+`No such file or directory`。守护进程由 `ui/index.cgi` 的 shim 懒启动。
+
+## 入口与访问地址
+
+- 托管台入口：`/cgi/ThirdParty/daili.manager/index.cgi/`，`ui/config` 里**不能出现 `port` 字段**（空串也算），
+  否则飞牛按“端口入口”解析，桌面窗口只剩标题、内容空白。
+- 代理应用入口：独立 TCP 端口（20000–29999），manifest `service_port` + 入口 `port`，访问 `http://<NAS>:<port>/`。
+- 公网（FN Connect）访问时，每个入口有独立应用子域：
+  `https://<入口键点→连字符>.<当前域名>/`；本项目入口键固定 `<appname>.main`，故为
+  `https://<appname 点→连字符>-main.<域名>/`。需要该应用已在 FN Connect 后台发布，否则子域返回 403。
+  详见 `docs/research/fnos-fnconnect-entry-url.md`。
+
+## 两个真实故障及根因
+
+1. **桌面窗口只有标题、内容空白**：`app/ui/config` 的入口写了 `"port": ""`。飞牛把“存在 port 字段”
+   当端口型入口，空串导致入口 URL 不成立。修法：入口结构体 `port` 加 `omitempty`，托管台入口不写该字段，
+   `VerifyManager` 拒绝出现 `port` 的托管台入口。
+2. **CGI 入口 HTTP 500，`manager.log` 只有启动行**：`cmd/install_callback` 用带引号 heredoc 写 shim，
+   `TRIM_APPDEST`/`TRIM_PKGVAR` 留到运行期才展开；飞牛 CGI 环境不导出这两个变量，脚本带 `set -u` 立即退出。
+   watchcow 的做法是**不带引号 heredoc**，安装时就把绝对路径写死进 `ui/index.cgi`。修法照做，shim 中不再出现
+   `TRIM_`，并在 socket 缺失时 `nohup bin/manager --mode serve` 懒启动后 `exec --mode cgi`。
+
+## 安装与状态机要点（实测）
+
+- 只用 `appcenter-cli install-fpk -v <volume> <fpk>`；`install-local` 在该版本全部失败（10237 + panic）。
+- 成功判据是输出含 `Installation complete` **且** `list` 中状态为 `running`；CLI 成功/失败经常都 exit 0。
+- `starting` 可以持续数分钟；这期间 `uninstall` 报 `code 10500`，重试即可，不要当成永久失败。
+- `install-fpk` 不校验 `manifest.checksum`；缺 `config/resource` 报 `10111`；
+  `desktop_applaunchname` 与 `app.tgz/ui/config` 的键不一致也能装上，所以要自己保证一致。
+- 升级 = 卸载 + 重装；已安装时 `install-fpk` 直接拒绝（`Application [...] is installed`）。
+
+## 排障顺序
+
+1. `sudo appcenter-cli list`：应用是否安装、状态是否 `running`。
+2. `ls -l /vol1/@appdata/daili.manager`：`manager.sock`、`manager.pid`、`manager.log` 是否都在。
+3. `cat /vol1/@appdata/daili.manager/manager.log`：应有 `started app=daili.manager`；CGI 打不开日志时会回退 stderr。
+4. 直接请求 `https://<host>/cgi/ThirdParty/daili.manager/index.cgi/`：500 说明 CGI 层没执行或 shim 找不到路径。
+5. `ps -ef | grep bin/manager`：进程在不在、是不是 root、socket 路径对不对。
