@@ -28,21 +28,40 @@
 
   <section id="listView">
     <div id="netBanner" class="net-banner" style="display:none"></div>
-    <div class="panel">
-      <div class="panel-head">
-        <div>
-          <h2>已托管的代理应用</h2>
-          <p>每个应用一个独立安装包、一个入口；修改后需要重新生成并安装。</p>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button id="importBtn" class="btn sm" type="button">批量导入</button>
-          <a id="exportBtn" class="btn sm" href="#">导出全部</a>
-          <button id="refreshBtn" class="btn sm" type="button">刷新</button>
-        </div>
-      </div>
-      <div id="listBody"></div>
+    <div class="tabs" id="listTabs">
+      <button class="tab active" data-ltab="managed" type="button">已托管的代理应用 <span class="count" id="managedCount">0</span></button>
+      <button class="tab" data-ltab="unmanaged" type="button">系统里已有 <span class="count" id="unmanagedCount">0</span></button>
     </div>
-    <div id="unmanagedWrap" style="margin-top:18px"></div>
+
+    <div id="tabManaged">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>已托管的代理应用</h2>
+            <p>每个应用一个独立安装包、一个入口；修改后需要重新生成并安装。</p>
+          </div>
+          <div class="head-actions">
+            <button id="importBtn" class="btn sm" type="button">批量导入</button>
+            <a id="exportBtn" class="btn sm" href="#">导出全部</a>
+            <button id="refreshBtn" class="btn sm" type="button">刷新</button>
+          </div>
+        </div>
+        <div id="selectionBar" class="selection-bar" style="display:none"></div>
+        <div id="listBody"></div>
+      </div>
+    </div>
+
+    <div id="tabUnmanaged" style="display:none">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>系统里已有、但不在托管台的应用</h2>
+            <p>只读展示，带它们的真实图标；要接管请用相同 appname 新建，或先在应用中心卸载。</p>
+          </div>
+        </div>
+        <div id="unmanagedBody"></div>
+      </div>
+    </div>
   </section>
 
   <section id="wizardView" style="display:none">

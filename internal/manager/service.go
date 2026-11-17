@@ -45,6 +45,9 @@ type Config struct {
 	// IconLibraryBase overrides the public icon library endpoint; empty means
 	// iconlib.DefaultBase. Tests point it at an httptest server.
 	IconLibraryBase string
+	// InstallRoots overrides where installed apps live; empty means the real
+	// fnOS layout (/vol*/@appcenter and /var/apps). Tests point it at a temp dir.
+	InstallRoots []string
 }
 
 // Service owns state, operations, and the CLI client.

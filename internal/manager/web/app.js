@@ -22,6 +22,9 @@
     iconFetched: false,
     iconLibrary: false,
     importPlan: null,
+    listTab: 'managed',
+    selected: {},
+    busy: {},
     settings: { appname_prefix: 'proxy.', appname_suffix: '' },
     network: { known: false, lan: null, client_ip: '' }
   };
@@ -64,7 +67,8 @@
     });
   }
 
-  function waitOperation(opId) {
+  function waitOperation(opId, every) {
+    var interval = every || 900;
     return new Promise(function (resolve, reject) {
       var started = Date.now();
       var tick = function () {
@@ -74,7 +78,7 @@
               reject(new Error('操作超时，请到列表查看状态'));
               return;
             }
-            setTimeout(tick, 1000);
+            setTimeout(tick, interval);
             return;
           }
           resolve(op);
@@ -246,9 +250,55 @@
     });
   }
 
+  function targetIconURL(sp) {
+    if (sp && sp.has_icon) return apiURL('/api/targets/' + encodeURIComponent(sp.id) + '/icon');
+    return defaultIconURL();
+  }
+
+  function imgFallback() {
+    return "this.onerror=null;this.src='" + defaultIconURL() + "'";
+  }
+
+  function selectedIDs() {
+    return Object.keys(state.selected).filter(function (k) { return state.selected[k]; });
+  }
+
+  function pruneSelection(targets) {
+    var live = {};
+    targets.forEach(function (t) { live[t.spec.id] = true; });
+    Object.keys(state.selected).forEach(function (id) {
+      if (!live[id]) delete state.selected[id];
+    });
+  }
+
+  function renderSelectionBar() {
+    var bar = $('selectionBar');
+    if (!bar) return;
+    var ids = selectedIDs();
+    if (!ids.length) {
+      bar.style.display = 'none';
+      bar.innerHTML = '';
+      return;
+    }
+    bar.style.display = '';
+    var q = ids.map(encodeURIComponent).join(',');
+    bar.innerHTML = '<span class="sel-info">已选 <b>' + ids.length + '</b> 项</span>' +
+      '<div class="sel-actions">' +
+      '<a class="btn sm" id="selDownload" href="' + esc(apiURL('/api/packages?ids=' + q)) + '">下载所选</a>' +
+      '<a class="btn sm" id="selExport" href="' + esc(apiURL('/api/export?ids=' + q)) + '">导出所选</a>' +
+      '<button class="btn sm danger" id="selDelete" type="button">删除所选</button>' +
+      '<button class="btn sm ghost" id="selClear" type="button">取消选择</button>' +
+      '</div>';
+  }
+
   function renderList(data) {
     window.__lastList = data;
     var targets = data.targets || [];
+    var un = data.unmanaged || [];
+    if ($('managedCount')) $('managedCount').textContent = targets.length;
+    if ($('unmanagedCount')) $('unmanagedCount').textContent = un.length;
+    pruneSelection(targets);
+
     if (!targets.length) {
       $('listBody').innerHTML = '<div class="empty"><div class="big">还没有代理应用</div><div>点击右上角“新建代理”，填一个 ip:port 就能生成安装包。</div><div style="margin-top:16px"><button class="btn primary" id="emptyNew" type="button">新建第一个代理</button></div></div>';
       var b = $('emptyNew');
@@ -257,6 +307,7 @@
       var rows = targets.map(function (t) {
         var sp = t.spec, rt = t.runtime || {};
         var st = statusInfo(rt.state);
+        var busy = state.busy[sp.id] || '';
         var op = rt.last_operation;
         var opText = '';
         if (op) {
@@ -277,37 +328,70 @@
         if (url && fn) entryHtml += '<div class="faint" style="font-size:11px;margin-top:3px">FN Connect 应用子域</div>';
         if (url && lanBlocked) entryHtml += '<div class="faint" style="font-size:11px;margin-top:3px">外网访问，端口通常不可达</div>';
         var actions = [];
-        if (rt.state === 'running' || rt.state === 'installed_not_running') {
-          actions.push('<button class="btn sm" data-act="open" data-id="' + esc(sp.id) + '" data-url="' + esc(url) + '" type="button">打开</button>');
+        if (!busy) {
+          if (rt.state === 'running' || rt.state === 'installed_not_running') {
+            actions.push('<button class="btn sm" data-act="open" data-id="' + esc(sp.id) + '" data-url="' + esc(url) + '" type="button">打开</button>');
+          }
+          actions.push('<button class="btn sm" data-act="edit" data-id="' + esc(sp.id) + '" type="button">编辑</button>');
+          actions.push('<button class="btn sm" data-act="apply" data-id="' + esc(sp.id) + '" type="button">' + (rt.state === 'draft' ? '安装' : '重新应用') + '</button>');
+          if (rt.last_known_good_path) actions.push('<button class="btn sm" data-act="rollback" data-id="' + esc(sp.id) + '" type="button">回滚</button>');
+          if (rt.package_path) actions.push('<a class="btn sm" href="' + apiURL('/api/targets/' + encodeURIComponent(sp.id) + '/package') + '">下载</a>');
+          actions.push('<a class="btn sm" href="' + apiURL('/api/targets/' + encodeURIComponent(sp.id) + '/export') + '">导出</a>');
+          actions.push('<button class="btn sm" data-act="log" data-id="' + esc(sp.id) + '" type="button">日志</button>');
+          actions.push('<button class="btn sm danger" data-act="delete" data-id="' + esc(sp.id) + '" type="button">删除</button>');
+        } else {
+          actions.push('<span class="faint" style="font-size:12px">处理中…</span>');
         }
-        actions.push('<button class="btn sm" data-act="edit" data-id="' + esc(sp.id) + '" type="button">编辑</button>');
-        actions.push('<button class="btn sm" data-act="apply" data-id="' + esc(sp.id) + '" type="button">' + (rt.state === 'draft' ? '安装' : '重新应用') + '</button>');
-        if (rt.last_known_good_path) actions.push('<button class="btn sm" data-act="rollback" data-id="' + esc(sp.id) + '" type="button">回滚</button>');
-        if (rt.package_path) actions.push('<a class="btn sm" href="' + apiURL('/api/targets/' + encodeURIComponent(sp.id) + '/package') + '">下载</a>');
-        actions.push('<a class="btn sm" href="' + apiURL('/api/targets/' + encodeURIComponent(sp.id) + '/export') + '">导出</a>');
-        actions.push('<button class="btn sm" data-act="log" data-id="' + esc(sp.id) + '" type="button">日志</button>');
-        actions.push('<button class="btn sm danger" data-act="delete" data-id="' + esc(sp.id) + '" type="button">删除</button>');
-        return '<tr>' +
-          '<td class="app-cell"><div class="name">' + esc(sp.display_name) + '</div><div class="id mono">' + esc(sp.appname) + '</div></td>' +
-          '<td class="target-cell"><div class="mono">' + esc(sp.target_url) + '</div><div class="faint">' + (sp.mode === 'direct' ? '直连 302' : '反向代理') + '</div></td>' +
-          '<td><span class="pill ' + st.cls + '"><span class="dot"></span>' + st.text + '</span>' + (rt.needs_reapply ? '<div class="faint" style="font-size:11px;margin-top:3px">待重新应用</div>' : '') + '</td>' +
-          '<td class="nowrap">' + entryHtml + '</td>' +
-          '<td class="muted" style="font-size:12px;max-width:230px">' + esc(opText) + '</td>' +
-          '<td><div class="row-actions">' + actions.join('') + '</div></td>' +
+        var statusHtml = busy
+          ? '<span class="pill info"><span class="spin"></span>' + esc(busy) + '</span>'
+          : '<span class="pill ' + st.cls + '"><span class="dot"></span>' + st.text + '</span>' + (rt.needs_reapply ? '<div class="faint" style="font-size:11px;margin-top:3px">待重新应用</div>' : '');
+        var checked = state.selected[sp.id] ? ' checked' : '';
+        return '<tr class="' + (checked ? 'row-selected' : '') + '">' +
+          '<td class="sel-cell"><input type="checkbox" class="row-check" data-sel="' + esc(sp.id) + '"' + checked + (busy ? ' disabled' : '') + ' aria-label="选择 ' + esc(sp.display_name) + '"></td>' +
+          '<td class="app-cell" data-label="应用"><div class="app-main"><img class="app-ico" alt="" src="' + esc(targetIconURL(sp)) + '" onerror="' + imgFallback() + '"><div><div class="name">' + esc(sp.display_name) + '</div><div class="id mono">' + esc(sp.appname) + '</div></div></div></td>' +
+          '<td class="target-cell" data-label="目标"><div class="mono">' + esc(sp.target_url) + '</div><div class="faint">' + (sp.mode === 'direct' ? '直连 302' : '反向代理') + '</div></td>' +
+          '<td data-label="状态">' + statusHtml + '</td>' +
+          '<td class="nowrap" data-label="入口">' + entryHtml + '</td>' +
+          '<td class="muted" style="font-size:12px;max-width:230px" data-label="最近操作">' + esc(opText) + '</td>' +
+          '<td data-label="操作"><div class="row-actions">' + actions.join('') + '</div></td>' +
           '</tr>';
       }).join('');
-      $('listBody').innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>应用</th><th>目标</th><th>状态</th><th>入口</th><th>最近操作</th><th style="text-align:right">操作</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      var allChecked = targets.length > 0 && selectedIDs().length === targets.length;
+      $('listBody').innerHTML = '<div class="table-wrap"><table class="targets"><thead><tr>' +
+        '<th class="sel-col"><input type="checkbox" id="selAll"' + (allChecked ? ' checked' : '') + ' aria-label="全选"></th>' +
+        '<th>应用</th><th>目标</th><th>状态</th><th>入口</th><th>最近操作</th><th style="text-align:right">操作</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     }
+    renderUnmanaged(un);
+    renderSelectionBar();
+  }
 
-    var un = data.unmanaged || [];
-    if (un.length) {
-      var urows = un.map(function (u) {
-        return '<tr><td class="mono">' + esc(u.appname) + '</td><td>' + esc(u.display_name) + '</td><td>' + esc(u.version) + '</td><td>' + esc(u.status) + '</td></tr>';
-      }).join('');
-      $('unmanagedWrap').innerHTML = '<div class="panel"><div class="panel-head"><div><h2>系统里已有、但不在托管台的应用</h2><p>只读展示；要接管请用相同 appname 新建，或先在应用中心卸载。</p></div></div><table><thead><tr><th>appname</th><th>名称</th><th>版本</th><th>状态</th></tr></thead><tbody>' + urows + '</tbody></table></div>';
-    } else {
-      $('unmanagedWrap').innerHTML = '';
+  function renderUnmanaged(un) {
+    var box = $('unmanagedBody');
+    if (!box) return;
+    if (!un.length) {
+      box.innerHTML = '<div class="empty"><div class="big">没有未纳管的应用</div><div>应用中心里的应用都已在托管台中。</div></div>';
+      return;
     }
+    var rows = un.map(function (u) {
+      var icon = apiURL('/api/apps/' + encodeURIComponent(u.appname) + '/icon');
+      return '<tr>' +
+        '<td class="app-cell" data-label="应用"><div class="app-main"><img class="app-ico" alt="" src="' + esc(icon) + '" onerror="' + imgFallback() + '"><div><div class="name">' + esc(u.display_name || u.appname) + '</div><div class="id mono">' + esc(u.appname) + '</div></div></div></td>' +
+        '<td data-label="版本"><span class="mono">' + esc(u.version) + '</span></td>' +
+        '<td data-label="状态"><span class="pill neutral"><span class="dot"></span>' + esc(u.status) + '</span></td>' +
+        '</tr>';
+    }).join('');
+    box.innerHTML = '<div class="table-wrap"><table><thead><tr><th>应用</th><th>版本</th><th>状态</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  function switchListTab(name) {
+    state.listTab = name;
+    var tabs = document.querySelectorAll('#listTabs .tab');
+    for (var i = 0; i < tabs.length; i++) {
+      tabs[i].classList.toggle('active', tabs[i].getAttribute('data-ltab') === name);
+    }
+    if ($('tabManaged')) $('tabManaged').style.display = name === 'managed' ? '' : 'none';
+    if ($('tabUnmanaged')) $('tabUnmanaged').style.display = name === 'unmanaged' ? '' : 'none';
   }
 
   function findTarget(id) {
@@ -357,15 +441,83 @@
       }).catch(function (err) { toast(msgOf(err), true); });
     } else if (act === 'delete') {
       if (!confirm('卸载应用并删除托管记录？安装包也会删除。')) return;
-      postOp('/api/targets/' + id + '/delete').then(function (r) {
-        return waitOperation(r.operation_id);
-      }).then(function (op) {
-        if (op && op.status === 'failed') toast('删除失败：' + (op.error || '未知错误'), true);
-        else toast('已删除');
-        return loadListCached();
-      }).catch(function (err) { toast(msgOf(err), true); });
+      deleteTargets([id]);
     } else if (act === 'log') {
       showLog(id);
+    }
+  }
+
+  // Deleting used to feel dead for several seconds: the POST only starts the
+  // uninstall and the row kept its old buttons until the operation finished.
+  // Mark the selected rows busy immediately, then poll quickly for the result.
+  function deleteTargets(ids) {
+    if (!ids.length) return Promise.resolve();
+    ids.forEach(function (id) { state.busy[id] = '正在卸载'; });
+    state.selected = {};
+    if (window.__lastList) renderList(window.__lastList);
+    var failed = [];
+    var chain = Promise.resolve();
+    ids.forEach(function (id) {
+      chain = chain.then(function () {
+        return api('/api/targets/' + id + '/delete', { method: 'POST', body: {} }).then(function (r) {
+          return waitOperation(r.operation_id, 700);
+        }).then(function (op) {
+          if (op && op.status === 'failed') failed.push(op.error || '未知错误');
+          delete state.busy[id];
+          if (window.__lastList) renderList(window.__lastList);
+        }).catch(function (err) {
+          failed.push(msgOf(err));
+          delete state.busy[id];
+          if (window.__lastList) renderList(window.__lastList);
+        });
+      });
+    });
+    return chain.then(function () {
+      return loadListCached();
+    }).then(function () {
+      if (failed.length) toast('删除完成，但有 ' + failed.length + ' 个失败：' + failed[0], true);
+      else toast(ids.length > 1 ? '已删除 ' + ids.length + ' 个应用' : '已删除');
+    });
+  }
+
+  function onListChange(e) {
+    var el = e.target;
+    if (!el || !el.type || el.type !== 'checkbox') return;
+    if (el.id === 'selAll') {
+      var on = el.checked;
+      (window.__lastTargets || []).forEach(function (t) {
+        if (state.busy[t.spec.id]) return;
+        state.selected[t.spec.id] = on;
+      });
+      if (window.__lastList) renderList(window.__lastList);
+      return;
+    }
+    var id = el.getAttribute('data-sel');
+    if (!id) return;
+    state.selected[id] = el.checked;
+    var row = el.closest('tr');
+    if (row) row.classList.toggle('row-selected', el.checked);
+    var all = $('selAll');
+    if (all) {
+      var total = (window.__lastTargets || []).filter(function (t) { return !state.busy[t.spec.id]; }).length;
+      all.checked = total > 0 && selectedIDs().length === total;
+    }
+    renderSelectionBar();
+  }
+
+  function onSelectionClick(e) {
+    var el = e.target.closest('button');
+    if (!el) return;
+    if (el.id === 'selClear') {
+      state.selected = {};
+      if (window.__lastList) renderList(window.__lastList);
+      return;
+    }
+    if (el.id === 'selDelete') {
+      var ids = selectedIDs();
+      if (!ids.length) return;
+      if (!confirm('卸载选中的 ' + ids.length + ' 个应用并删除托管记录？安装包也会删除。')) return;
+      deleteTargets(ids).catch(function (err) { toast(msgOf(err), true); });
     }
   }
 
@@ -1211,6 +1363,12 @@
       loadNetwork();
     });
     $('listBody').addEventListener('click', onListClick);
+    $('listBody').addEventListener('change', onListChange);
+    if ($('selectionBar')) $('selectionBar').addEventListener('click', onSelectionClick);
+    if ($('listTabs')) $('listTabs').addEventListener('click', function (e) {
+      var b = e.target.closest('.tab');
+      if (b) switchListTab(b.getAttribute('data-ltab'));
+    });
     $('testBtn').addEventListener('click', testTarget);
     $('checkNameBtn').addEventListener('click', checkName);
     $('iconPick').addEventListener('click', function () { $('iconFile').click(); });

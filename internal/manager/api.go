@@ -45,6 +45,8 @@ func (s *Service) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/targets/{id}/delete", s.handleDelete)
 	mux.HandleFunc("POST /api/targets/{id}/rollback", s.handleRollback)
 	mux.HandleFunc("GET /api/targets/{id}/package", s.handlePackage)
+	mux.HandleFunc("GET /api/packages", s.handlePackageZip)
+	mux.HandleFunc("GET /api/apps/{appname}/icon", s.handleAppIcon)
 	mux.HandleFunc("GET /api/targets/{id}/log", s.handleLog)
 	mux.HandleFunc("POST /api/targets/{id}/test-target", s.handleTestTarget)
 	mux.HandleFunc("POST /api/test-target", s.handleTestTarget)
