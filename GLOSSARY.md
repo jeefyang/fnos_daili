@@ -100,7 +100,7 @@ CGI 入口的固定路径前缀 `/cgi/ThirdParty/<appname>/index.cgi`。托管�
 
 ## 站点图标 (Site icon)
 
-目标站点自己声明的 favicon，和用户上传的图片一样作为 target 的自定义图标。只在用户点按“从站点获取”时出站：先读 web app manifest 的 `icons[]`（最大者优先），再读 `<link rel=icon|apple-touch-icon>`（按声明尺寸从大到小），再试 `/apple-touch-icon.png`，最后回退 `/favicon.ico`；接受 PNG/JPEG/GIF/BMP/WebP/ICO，ICO 取最大帧，源图最小 16×16，统一归一化成 256 与 64 档 PNG（小图用 Mitchell 核放大）。抓取复用目标的 DNS 设置与地址拦截。归一化后的图标保留 alpha 透明背景，形状外不铺底色：飞牛按 alpha 合成，铺黑底会显示成黑角。
+目标站点自己声明的 favicon，和用户上传的图片一样作为 target 的自定义图标。只在用户点按“从站点获取”时出站：先读 web app manifest 的 `icons[]`（最大者优先），再读 `<link rel=icon|apple-touch-icon>`（按声明尺寸从大到小），再试 `/apple-touch-icon.png`，最后回退 `/favicon.ico`；接受 PNG/JPEG/GIF/BMP/WebP/ICO，ICO 取最大帧，源图最小 16×16，统一归一化成 256 与 64 档 PNG（小图用 Mitchell 核放大）。抓取复用目标的 DNS 设置与地址拦截。归一化只做居中裁方与缩放，不画圆角、不抠图、不铺底色：源图透明处保持透明（飞牛按 alpha 合成），圆角由显示方用 CSS 处理，内置默认图标则是铺满整块的不透明方形图。
 
 ## 图标库 (Icon library)
 

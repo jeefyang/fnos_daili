@@ -46,10 +46,10 @@ func fail(err error) {
 	os.Exit(1)
 }
 
-// render draws the icon at supersample scale and averages it down. Pixels
-// outside the rounded square stay fully transparent: fnOS composites icons over
-// whatever is behind them, so an opaque black margin would show up as black
-// corners on the desktop.
+// render draws the icon at supersample scale and averages it down. The
+// artwork fills the whole square: rounding is a presentation concern, so the
+// desktop and the manager preview apply it with CSS while the fpk ships a plain
+// square PNG that carries no transparent or black margin of its own.
 func render(size int) *image.NRGBA {
 	w := size * supersample
 	hi := image.NewNRGBA(image.Rect(0, 0, w, w))
@@ -57,9 +57,6 @@ func render(size int) *image.NRGBA {
 		for px := 0; px < w; px++ {
 			u := (float64(px) + 0.5) / float64(w)
 			v := (float64(py) + 0.5) / float64(w)
-			if !inRoundedSquare(u, v, 0.47, 0.20) {
-				continue
-			}
 			c := background(u, v)
 			if inArrowRight(u, v) {
 				c = blend(c, color.NRGBA{255, 255, 255, 255}, 0.96)
@@ -71,15 +68,6 @@ func render(size int) *image.NRGBA {
 		}
 	}
 	return downsample(hi, size)
-}
-
-func inRoundedSquare(u, v, half, radius float64) bool {
-	x := math.Abs(u-0.5) - (half - radius)
-	y := math.Abs(v-0.5) - (half - radius)
-	if x <= 0 || y <= 0 {
-		return math.Abs(u-0.5) <= half && math.Abs(v-0.5) <= half
-	}
-	return x*x+y*y <= radius*radius
 }
 
 func background(u, v float64) color.NRGBA {
@@ -125,8 +113,8 @@ func lerp(a, b, t float64) float64 {
 	return a + (b-a)*t
 }
 
-// downsample averages the supersampled canvas in premultiplied space so the
-// rounded outline keeps a soft, correct alpha ramp instead of a hard edge.
+// downsample averages the supersampled canvas so the outlined arrows keep a
+// soft edge instead of a staircase.
 func downsample(src *image.NRGBA, size int) *image.NRGBA {
 	dst := image.NewNRGBA(image.Rect(0, 0, size, size))
 	n := uint64(supersample * supersample)
