@@ -103,8 +103,9 @@
               <div class="icon-actions">
                 <input id="iconFile" type="file" accept="image/png,image/jpeg" hidden>
                 <button id="iconPick" class="btn sm" type="button">选择图片</button>
+                <button id="iconFetch" class="btn sm" type="button">从站点获取</button>
                 <button id="iconReset" class="btn sm ghost" type="button">恢复默认</button>
-                <div class="help">PNG/JPEG，建议正方形 256×256 以上，最大 2MB；保存时自动裁成 256 与 64 两档。</div>
+                <div class="help">PNG/JPEG/ICO，建议正方形 256×256 以上，最大 2MB；“从站点获取”会读取目标页的图标声明并回退到 /favicon.ico，只在点按时访问目标。保存时自动裁成 256 与 64 两档。</div>
                 <div id="iconError" class="error"></div>
               </div>
             </div>

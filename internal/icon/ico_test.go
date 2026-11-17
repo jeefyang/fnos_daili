@@ -1,0 +1,170 @@
+package icon
+
+import (
+	"bytes"
+	"encoding/binary"
+	"image"
+	"image/color"
+	"image/png"
+	"testing"
+)
+
+func icoEntry(w, h, bitCount int, offset, size int) []byte {
+	e := make([]byte, 16)
+	if w == 256 {
+		e[0] = 0
+	} else {
+		e[0] = byte(w)
+	}
+	if h == 256 {
+		e[1] = 0
+	} else {
+		e[1] = byte(h)
+	}
+	binary.LittleEndian.PutUint16(e[4:6], 1)
+	binary.LittleEndian.PutUint16(e[6:8], uint16(bitCount))
+	binary.LittleEndian.PutUint32(e[8:12], uint32(size))
+	binary.LittleEndian.PutUint32(e[12:16], uint32(offset))
+	return e
+}
+
+func icoHeader(count int) []byte {
+	h := make([]byte, 6)
+	binary.LittleEndian.PutUint16(h[2:4], 1)
+	binary.LittleEndian.PutUint16(h[4:6], uint16(count))
+	return h
+}
+
+// bmp32Payload builds a 32-bit BMP frame with the ICO doubled-height header
+// and a trailing AND mask, which is what most .ico files in the wild look like.
+func bmp32Payload(t *testing.T, w, h int, alpha byte) []byte {
+	t.Helper()
+	rowSize := ((32*w + 31) / 32) * 4
+	maskRow := ((w + 31) / 32) * 4
+	payload := make([]byte, 40+rowSize*h+maskRow*h)
+	binary.LittleEndian.PutUint32(payload[0:4], 40)
+	binary.LittleEndian.PutUint32(payload[4:8], uint32(w))
+	binary.LittleEndian.PutUint32(payload[8:12], uint32(2*h))
+	binary.LittleEndian.PutUint16(payload[12:14], 1)
+	binary.LittleEndian.PutUint16(payload[14:16], 32)
+	for y := 0; y < h; y++ {
+		row := payload[40+(h-1-y)*rowSize:]
+		for x := 0; x < w; x++ {
+			p := row[x*4:]
+			p[0] = byte(x * 3)
+			p[1] = byte(y * 3)
+			p[2] = 200
+			p[3] = alpha
+		}
+	}
+	return payload
+}
+
+func bmp32ICO(t *testing.T, w, h int, alpha byte) []byte {
+	t.Helper()
+	return wrapICO(t, []byte{byte(w % 256), byte(h % 256)}, bmp32Payload(t, w, h, alpha))
+}
+
+func pngICO(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.SetNRGBA(x, y, color.NRGBA{R: 30, G: byte(x), B: byte(y), A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return wrapICO(t, []byte{byte(w % 256), byte(h % 256)}, buf.Bytes())
+}
+
+func wrapICO(t *testing.T, dims []byte, payload []byte) []byte {
+	t.Helper()
+	header := icoHeader(1)
+	entry := icoEntry(int(dims[0]), int(dims[1]), 32, 6+16, len(payload))
+	var buf bytes.Buffer
+	buf.Write(header)
+	buf.Write(entry)
+	buf.Write(payload)
+	return buf.Bytes()
+}
+
+func TestNormalizeFaviconUpscalesSmallPNG(t *testing.T) {
+	set, err := NormalizeFavicon(testPNG(t, 32, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := png.Decode(bytes.NewReader(set.Icon256))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := img.Bounds().Dx(); got != 256 {
+		t.Fatalf("width = %d, want 256", got)
+	}
+}
+
+func TestNormalizeFaviconDecodesICO(t *testing.T) {
+	set, err := NormalizeFavicon(bmp32ICO(t, 48, 48, 255))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Icon64) == 0 || len(set.Icon256) == 0 {
+		t.Fatal("empty icon set")
+	}
+}
+
+func TestNormalizeFaviconDecodesPNGFrame(t *testing.T) {
+	if _, err := NormalizeFavicon(pngICO(t, 256, 256)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNormalizeFaviconPicksLargestFrame(t *testing.T) {
+	small := bmp32Payload(t, 16, 16, 255)
+	big := bmp32Payload(t, 128, 128, 255)
+	header := icoHeader(2)
+	entrySmall := icoEntry(16, 16, 32, 6+32, len(small))
+	entryBig := icoEntry(128, 128, 32, 6+32+len(small), len(big))
+	data := append(header, entrySmall...)
+	data = append(data, entryBig...)
+	data = append(data, small...)
+	data = append(data, big...)
+	img, err := decodeICO(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := img.Bounds().Dx(); got != 128 {
+		t.Fatalf("picked width %d, want 128", got)
+	}
+}
+
+func TestDecodeICOTreatsZeroAlphaAsOpaque(t *testing.T) {
+	img, err := decodeICO(bmp32ICO(t, 32, 32, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nrgba, ok := img.(*image.NRGBA)
+	if !ok {
+		t.Fatalf("decoded %T, want *image.NRGBA", img)
+	}
+	if a := nrgba.NRGBAAt(0, 0).A; a != 255 {
+		t.Fatalf("alpha = %d, want 255", a)
+	}
+}
+
+func TestNormalizeRejectsICO(t *testing.T) {
+	if _, err := Normalize(bmp32ICO(t, 64, 64, 255)); err == nil {
+		t.Fatal("upload path accepted ICO")
+	}
+}
+
+func TestDecodeICORejectsGarbage(t *testing.T) {
+	if _, err := decodeICO([]byte{0, 0, 1, 0, 1, 0}); err == nil {
+		t.Fatal("truncated ICO accepted")
+	}
+	if _, err := decodeICO([]byte("nope")); err == nil {
+		t.Fatal("non-ICO accepted")
+	}
+}

@@ -3,6 +3,8 @@ package manager
 import (
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +20,7 @@ import (
 
 	"github.com/jeefyang/fnos_daili/internal/cli"
 	"github.com/jeefyang/fnos_daili/internal/dnsx"
+	"github.com/jeefyang/fnos_daili/internal/favicon"
 	"github.com/jeefyang/fnos_daili/internal/guard"
 	"github.com/jeefyang/fnos_daili/internal/spec"
 	"github.com/jeefyang/fnos_daili/internal/state"
@@ -44,6 +47,7 @@ func (s *Service) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/targets/{id}/log", s.handleLog)
 	mux.HandleFunc("POST /api/targets/{id}/test-target", s.handleTestTarget)
 	mux.HandleFunc("POST /api/test-target", s.handleTestTarget)
+	mux.HandleFunc("POST /api/favicon", s.handleFavicon)
 	mux.HandleFunc("GET /api/appnames/check", s.handleAppNameCheck)
 	mux.HandleFunc("GET /api/volumes", s.handleVolumes)
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
@@ -469,6 +473,74 @@ func (s *Service) handleTestTarget(w http.ResponseWriter, r *http.Request) {
 	}
 	res["elapsed_ms"] = time.Since(start).Milliseconds()
 	writeJSON(w, http.StatusOK, res)
+}
+
+// handleFavicon fetches the target's site icon on the operator's explicit
+// request. It only runs when the form asks for it and reuses the same address
+// guard and pinned DNS server as the proxy runtime.
+func (s *Service) handleFavicon(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		TargetURL     string `json:"target_url"`
+		DNSServer     string `json:"dns_server"`
+		SkipTLSVerify bool   `json:"skip_tls_verify"`
+		AllowLoopback bool   `json:"allow_loopback"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	norm, err := target.Normalize(body.TargetURL)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+		return
+	}
+	dnsServer := strings.TrimSpace(body.DNSServer)
+	if dnsServer == "" {
+		dnsServer = s.Settings().DNSServer
+	}
+	if dnsServer != "" {
+		if err := dnsx.Validate(dnsServer); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	g := &guard.Guard{AllowLoopback: body.AllowLoopback}
+	if dnsServer != "" {
+		g.Resolver = dnsx.New(dnsServer)
+	}
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 nil,
+			DialContext:           g.DialContext,
+			ForceAttemptHTTP2:     true,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+			TLSClientConfig:       &tls.Config{InsecureSkipVerify: body.SkipTLSVerify}, // #nosec G402 - explicit per-target opt-in.
+		},
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return errors.New("too many redirects")
+			}
+			return nil
+		},
+	}
+	set, err := favicon.Fetch(ctx, client, norm)
+	if err != nil {
+		status, code := http.StatusBadGateway, "favicon_failed"
+		if errors.Is(err, favicon.ErrNotFound) {
+			status, code = http.StatusNotFound, "favicon_not_found"
+		}
+		msg := shortError(err)
+		s.logger.Printf("favicon %s: %s", norm, msg)
+		writeError(w, status, code, msg)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"icon_data": "data:image/png;base64," + base64.StdEncoding.EncodeToString(set.Icon256),
+	})
 }
 
 // targetCheckError turns a guard failure into a stable category plus a short,

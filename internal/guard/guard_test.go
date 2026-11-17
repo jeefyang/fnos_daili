@@ -3,7 +3,9 @@ package guard
 import (
 	"context"
 	"errors"
+	"net"
 	"net/netip"
+	"strconv"
 	"testing"
 )
 
@@ -107,5 +109,50 @@ func TestCheckHostLiteral(t *testing.T) {
 	}
 	if err := g.CheckHost(context.Background(), "10.0.0.1", 80); err != nil {
 		t.Fatalf("literal rejected: %v", err)
+	}
+}
+
+func TestDialContextBlocksLoopback(t *testing.T) {
+	g := &Guard{}
+	if _, err := g.DialContext(context.Background(), "tcp", "127.0.0.1:8080"); err == nil {
+		t.Fatal("loopback dial accepted")
+	} else {
+		var ge *Error
+		if !errors.As(err, &ge) || ge.Reason != "loopback" {
+			t.Fatalf("err = %v, want loopback guard error", err)
+		}
+	}
+}
+
+func TestDialContextDialsResolvedAddress(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	_, portText, _ := net.SplitHostPort(ln.Addr().String())
+	if port, _ := strconv.Atoi(portText); port >= 20000 && port <= 29999 {
+		t.Skipf("listener port %d is a blocked proxy port", port)
+	}
+	go func() {
+		conn, err := ln.Accept()
+		if err == nil {
+			conn.Close()
+		}
+	}()
+	g := &Guard{AllowLoopback: true}
+	conn, err := g.DialContext(context.Background(), "tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	conn.Close()
+}
+
+func TestDialContextResolveError(t *testing.T) {
+	g := &Guard{Resolver: fakeResolver{}}
+	_, err := g.DialContext(context.Background(), "tcp", "missing.example:80")
+	var re *ResolveError
+	if !errors.As(err, &re) {
+		t.Fatalf("err = %v, want ResolveError", err)
 	}
 }

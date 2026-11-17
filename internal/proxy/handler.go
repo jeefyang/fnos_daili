@@ -216,36 +216,18 @@ func (h *Handler) newTransport() *http.Transport {
 }
 
 func (h *Handler) guardDial(dialer *net.Dialer) func(context.Context, string, string) (net.Conn, error) {
+	h.guard.Dialer = dialer
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		host, portText, err := net.SplitHostPort(address)
+		conn, err := h.guard.DialContext(ctx, network, address)
 		if err != nil {
-			return nil, err
-		}
-		port, err := strconv.Atoi(portText)
-		if err != nil {
-			return nil, err
-		}
-		addrs, err := h.guard.Resolve(ctx, host)
-		if err != nil {
-			h.logger.Printf("%s target resolve failed: %v", requestIDFrom(ctx), err)
-			return nil, err
-		}
-		var lastErr error
-		for _, addr := range addrs {
-			if err := h.guard.CheckAddr(addr, port); err != nil {
-				h.logger.Printf("%s target blocked: %v", requestIDFrom(ctx), err)
-				return nil, err
+			var re *guard.ResolveError
+			if errors.As(err, &re) {
+				h.logger.Printf("%s target resolve failed: %v", requestIDFrom(ctx), err)
+			} else {
+				h.logger.Printf("%s target dial failed: %v", requestIDFrom(ctx), err)
 			}
-			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(addr.String(), portText))
-			if err == nil {
-				return conn, nil
-			}
-			lastErr = err
 		}
-		if lastErr == nil {
-			lastErr = fmt.Errorf("no addresses for %s", host)
-		}
-		return nil, lastErr
+		return conn, err
 	}
 }
 

@@ -91,7 +91,7 @@ sudo appcenter-cli list
 `https://<NAS>/cgi/ThirdParty/daili.manager/index.cgi/`），点“新建代理”：
 
 1. 填目标 origin（如 `http://192.168.123.200:8021`），可点“测试连通”先探一次 TCP；
-2. 填显示名称，appname 会按设置里的全局前后缀自动建议，可改；可上传应用图标（PNG/JPEG，≥64×64，≤2MB）；
+2. 填显示名称，appname 会按设置里的全局前后缀自动建议，可改；可上传应用图标（PNG/JPEG，≥64×64，≤2MB），也可点“从站点获取”按需抓取目标的 favicon（ICO 亦可）；
 3. 选模式（反向代理 / 直连 302）与可见性，端口由托管台从 20000–29999 分配；
 4. 点“生成并安装”，托管台会打包、调用 `appcenter-cli install-fpk` 并等它 `running`，成功后自动回列表。
 

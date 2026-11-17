@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type Resolver interface {
@@ -16,6 +18,8 @@ type Resolver interface {
 type Guard struct {
 	AllowLoopback bool
 	Resolver      Resolver
+	// Dialer is optional; a 10s dial timeout is used when nil.
+	Dialer *net.Dialer
 }
 
 type Error struct {
@@ -124,6 +128,43 @@ func (g *Guard) CheckAddr(addr netip.Addr, port int) error {
 		return &Error{Reason: "multicast", Addr: addr}
 	}
 	return nil
+}
+
+// DialContext resolves address through the guard, rejects every blocked
+// address, then dials the first usable IP. Host names never reach the kernel
+// resolver, so a pinned DNS server is honoured for outbound dials too.
+func (g *Guard) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	host, portText, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return nil, err
+	}
+	addrs, err := g.Resolve(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	dialer := g.Dialer
+	if dialer == nil {
+		dialer = &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	}
+	var lastErr error
+	for _, addr := range addrs {
+		if err := g.CheckAddr(addr, port); err != nil {
+			return nil, err
+		}
+		conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(addr.String(), portText))
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no addresses for %s", host)
+	}
+	return nil, lastErr
 }
 
 func checkPort(port int) error {

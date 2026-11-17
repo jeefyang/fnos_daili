@@ -19,6 +19,7 @@
     editHasIcon: false,
     iconData: '',
     iconRemove: false,
+    iconFetched: false,
     settings: { appname_prefix: 'proxy.', appname_suffix: '' },
     network: { known: false, lan: null, client_ip: '' }
   };
@@ -441,6 +442,7 @@
     reader.onload = function () {
       state.iconData = String(reader.result || '');
       state.iconRemove = false;
+      state.iconFetched = false;
       setIconPreview(state.iconData);
       errBox.textContent = '';
     };
@@ -448,8 +450,46 @@
     reader.readAsDataURL(file);
   }
 
+  // Fetches the target's own icon; the request is only made when the operator
+  // presses the button, never while typing.
+  function onIconFetch() {
+    var box = $('iconError');
+    var btn = $('iconFetch');
+    var target = $('target_url').value.trim();
+    box.textContent = '';
+    if (!target) {
+      box.textContent = '先在第 1 步填写目标地址';
+      return;
+    }
+    btn.disabled = true;
+    var label = btn.textContent;
+    btn.textContent = '获取中…';
+    api('/api/favicon', {
+      method: 'POST',
+      body: {
+        target_url: target,
+        dns_server: $('dns_server').value.trim(),
+        skip_tls_verify: $('skip_tls_verify').checked,
+        allow_loopback: $('allow_loopback').checked
+      }
+    }).then(function (res) {
+      if (!res || !res.icon_data) throw new Error('目标没有返回图标');
+      state.iconData = res.icon_data;
+      state.iconRemove = false;
+      state.iconFetched = true;
+      setIconPreview(state.iconData);
+      box.textContent = '';
+    }).catch(function (err) {
+      box.textContent = '获取图标失败：' + msgOf(err);
+    }).then(function () {
+      btn.disabled = false;
+      btn.textContent = label;
+    });
+  }
+
   function onIconReset() {
     state.iconData = '';
+    state.iconFetched = false;
     state.iconRemove = !!state.editId && state.editHasIcon;
     $('iconFile').value = '';
     $('iconError').textContent = '';
@@ -468,6 +508,7 @@
     state.editHasIcon = false;
     state.iconData = '';
     state.iconRemove = false;
+    state.iconFetched = false;
     $('iconFile').value = '';
     $('iconError').textContent = '';
     setIconPreview(defaultIconURL());
@@ -749,7 +790,7 @@
       ['appname', d.appname],
       ['入口', fnConnectHost() ? (d.appname ? entryURL(d.appname, state.editPort) : '生成时按 appname 生成应用子域') : (state.editPort ? entryURL(d.appname, state.editPort) : '生成时自动分配端口')],
       ['安装卷', '卷 ' + d.install_volume],
-      ['图标', state.iconData ? '自定义（待保存）' : (state.iconRemove ? '恢复默认' : (state.editHasIcon ? '当前为自定义' : '默认'))],
+      ['图标', state.iconFetched ? '从目标站点抓取（待保存）' : (state.iconData ? '自定义上传（待保存）' : (state.iconRemove ? '恢复默认' : (state.editHasIcon ? '当前为自定义' : '默认')))],
       ['DNS 服务器', d.dns_server || '系统默认'],
       ['Basic Auth', d.basic_auth ? ('开启 · ' + d.basic_auth.username) : '关闭'],
       ['跳过证书校验', d.skip_tls_verify ? '是' : '否'],
@@ -967,6 +1008,7 @@
     $('iconPick').addEventListener('click', function () { $('iconFile').click(); });
     $('iconFile').addEventListener('change', onIconPick);
     $('iconReset').addEventListener('click', onIconReset);
+    $('iconFetch').addEventListener('click', onIconFetch);
     $('nextBtn').addEventListener('click', next);
     // The rail lets you jump back to an earlier step (for example to change the
     // target of an existing app); forward navigation always re-validates.

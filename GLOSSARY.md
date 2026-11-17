@@ -97,3 +97,7 @@ CGI 入口的固定路径前缀 `/cgi/ThirdParty/<appname>/index.cgi`。托管�
 ## 操作 (Operation)
 
 托管台发起的一次异步变更，取值为 `install`、`upgrade`、`reinstall`、`uninstall`、`rollback`、`start` 之一。记录在托管台状态的 `last_operation` 里，界面按 operation id 轮询进度；同一目标同时只允许一个变更操作。
+
+## 站点图标 (Site icon)
+
+目标站点自己声明的 favicon，和用户上传的图片一样作为 target 的自定义图标。只在用户点按“从站点获取”时出站：先读页面 `<link rel=icon|apple-touch-icon>`（按声明尺寸从大到小），再回退 `/favicon.ico`；接受 PNG/JPEG/ICO，ICO 取最大帧，源图最小 16×16，统一归一化成 256 与 64 两档 PNG。抓取复用目标的 DNS 设置与地址拦截。
