@@ -261,6 +261,55 @@ func TestDecodeICOZeroAlphaFallsBackToMask(t *testing.T) {
 	}
 }
 
+func TestDecodeICOAppliesMaskOverOpaqueAlpha(t *testing.T) {
+	// Some encoders fill the 32-bit alpha channel with 255 and mark the
+	// transparency only in the AND mask; the mask still wins.
+	payload := bmp32Payload(t, 32, 32, 255)
+	rowSize := ((32*32 + 31) / 32) * 4
+	maskRow := ((32 + 31) / 32) * 4
+	for y := 0; y < 32; y++ {
+		mrow := payload[40+rowSize*32+(31-y)*maskRow:]
+		mrow[0] = 0x80 // x = 0 transparent
+	}
+	img, err := decodeICO(icoWithDepth(t, 32, 32, 32, payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nrgba := img.(*image.NRGBA)
+	if a := nrgba.NRGBAAt(0, 10).A; a != 0 {
+		t.Fatalf("masked pixel alpha = %d, want 0", a)
+	}
+	if a := nrgba.NRGBAAt(10, 10).A; a != 255 {
+		t.Fatalf("unmasked pixel alpha = %d, want 255", a)
+	}
+}
+
+func TestNormalizeFaviconKeepsMaskedCornersTransparent(t *testing.T) {
+	payload := bmp32Payload(t, 64, 64, 255)
+	rowSize := ((32*64 + 31) / 32) * 4
+	maskRow := ((64 + 31) / 32) * 4
+	for y := 0; y < 8; y++ {
+		mrow := payload[40+rowSize*64+(63-y)*maskRow:]
+		for x := 0; x < 8; x++ {
+			mrow[x/8] |= 0x80 >> uint(x%8)
+		}
+	}
+	set, err := NormalizeFavicon(icoWithDepth(t, 64, 64, 32, payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := png.Decode(bytes.NewReader(set.Icon256))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := img.(*image.NRGBA).NRGBAAt(0, 0).A; a != 0 {
+		t.Fatalf("masked corner alpha = %d, want 0", a)
+	}
+	if a := img.(*image.NRGBA).NRGBAAt(128, 128).A; a != 255 {
+		t.Fatalf("centre alpha = %d, want 255", a)
+	}
+}
+
 func TestNormalizeFaviconKeepsTransparentEdges(t *testing.T) {
 	set, err := NormalizeFavicon(icoWithDepth(t, 64, 64, 24, bmp24Payload(t, 64, 64, 32)))
 	if err != nil {

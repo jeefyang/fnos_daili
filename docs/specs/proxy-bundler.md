@@ -138,7 +138,7 @@ type BasicAuth struct {
 
 图标不属于 `ProxySpec`，而是 target 的可选附件：API 输入用 `icon_data`（base64 data URL，PNG/JPEG/WebP/BMP/GIF/ICO，≤2MB，≤16M 像素，普通图 ≥64×64、ICO 帧 ≥16×16；非 PNG 一律解码后转 PNG）或 `remove_icon`（二者互斥），输出用 `has_icon`。托管台在保存时把图统一裁成 256 与 64 两档 PNG，存 state 的 `custom_icon_64` / `custom_icon_256`；生成包时替换内置图标。
 
-`POST /api/favicon` 供“从站点获取”按钮使用：输入 `target_url`、`dns_server`、`skip_tls_verify`、`allow_loopback`（后三者缺省取表单/全局设置），托管台用与代理运行时相同的解析器、目标拦截和 TLS 策略访问目标，先读页面里的 web app manifest（`<link rel=manifest>`，取最大的 `icons[].src`），再读 `<link rel=icon|apple-touch-icon>`（按 `sizes` 从大到小），再试 `/apple-touch-icon.png`、`/apple-touch-icon-precomposed.png`，最后回退 `/favicon.ico`，用 `icon.NormalizeFavicon` 归一化。favicon 解码接受 PNG/JPEG/GIF/BMP/WebP/ICO：ICO 取最大帧，支持 PNG 帧与 32/24/8/4/1 位 BMP 帧（含 AND mask 透明），源图最小 16×16；小于 256 的源图用 Mitchell 三次核放大（无过冲，不留亮边与台阶），大于 256 用 CatmullRom 缩小，缩放后把 alpha 1..7 与 248..254 钳到 0/255。成功返回 `{"icon_data": "data:image/png;base64,..."}`（256 档），前端把它当作待保存的 `icon_data`；找不到图标返回 404 `favicon_not_found`，网络/解析失败返回 502 `favicon_failed`。
+`POST /api/favicon` 供“从站点获取”按钮使用：输入 `target_url`、`dns_server`、`skip_tls_verify`、`allow_loopback`（后三者缺省取表单/全局设置），托管台用与代理运行时相同的解析器、目标拦截和 TLS 策略访问目标，先读页面里的 web app manifest（`<link rel=manifest>`，取最大的 `icons[].src`），再读 `<link rel=icon|apple-touch-icon>`（按 `sizes` 从大到小），再试 `/apple-touch-icon.png`、`/apple-touch-icon-precomposed.png`，最后回退 `/favicon.ico`，用 `icon.NormalizeFavicon` 归一化。favicon 解码接受 PNG/JPEG/GIF/BMP/WebP/ICO：ICO 取最大帧，支持 PNG 帧与 32/24/8/4/1 位 BMP 帧（含 AND mask 透明），源图最小 16×16；小于 256 的源图用 Mitchell 三次核放大（无过冲，不留亮边与台阶），大于 256 用 CatmullRom 缩小，缩放后把 alpha 1..7 与 248..254 钳到 0/255。ICO 的 AND mask 始终生效：mask 置位的像素一律透明，即使 32 位帧的 alpha 通道写满了 255（有些编辑器只在 mask 里标透明），而 32 位帧 alpha 全零时按不透明处理、由 mask 决定形状。成功返回 `{"icon_data": "data:image/png;base64,..."}`（256 档），前端把它当作待保存的 `icon_data`；找不到图标返回 404 `favicon_not_found`，网络/解析失败返回 502 `favicon_failed`。
 
 ### 4.2 目标规范化
 
@@ -394,6 +394,7 @@ checksum=<md5(app.tgz)>
 - `desc` 不能含换行；如果用户描述有换行，替换为空格。
 - 入口 `url` 固定 `/`，`port` 写十进制端口字符串。
 - 图标：target 有自定义图标时用 `custom_icon_64/256`，否则用内置默认 64/256；`ui/config` 的 `icon` 固定 `images/icon_{0}.png`，`{0}` 原样写，由飞牛按 DPI 代入 64/256。
+- 图标必须是带 alpha 的 PNG，形状外的像素保持透明（alpha=0），不要铺黑底或白底：飞牛按 alpha 合成，铺底会变成可见的黑角/白角。内置默认图标同样带透明圆角，`tools/gen-icons` 在预乘空间降采样以免边缘发黑。
 
 ### 5.4 app/ui/config
 

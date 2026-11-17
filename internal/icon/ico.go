@@ -202,22 +202,27 @@ func decodeICOBitmap(payload []byte, f icoFrame) (image.Image, error) {
 			img.SetNRGBA(x, y, c)
 		}
 	}
-	// A 32-bit frame whose alpha channel is actually populated carries its own
-	// transparency and the mask is ignored, as Windows does. Everywhere else,
-	// including 32-bit frames that some editors leave at alpha zero, the mask
-	// decides: bit set = transparent.
-	if bitCount != 32 || !sawAlpha {
+	// The AND mask is composited on top of the colour data, as Windows does: a
+	// set bit always means transparent, even for a 32-bit frame that also
+	// carries an alpha channel (some editors mark transparency only in the
+	// mask). Pixels the mask leaves alone keep the frame's own alpha when it is
+	// real, and are opaque otherwise: 1/4/8/24-bit frames have no alpha at all,
+	// and some 32-bit frames are written with alpha zero everywhere.
+	if hasMask || bitCount != 32 || !sawAlpha {
 		for y := 0; y < height; y++ {
 			var maskRow []byte
 			if hasMask {
 				maskRow = payload[maskOffset+(height-1-y)*maskRowSize:]
 			}
 			for x := 0; x < width; x++ {
-				a := byte(255)
+				i := y*img.Stride + x*4 + 3
 				if maskRow != nil && maskTransparent(maskRow, x) {
-					a = 0
+					img.Pix[i] = 0
+					continue
 				}
-				img.Pix[y*img.Stride+x*4+3] = a
+				if bitCount != 32 || !sawAlpha {
+					img.Pix[i] = 255
+				}
 			}
 		}
 	}

@@ -46,9 +46,13 @@ func fail(err error) {
 	os.Exit(1)
 }
 
-func render(size int) *image.RGBA {
+// render draws the icon at supersample scale and averages it down. Pixels
+// outside the rounded square stay fully transparent: fnOS composites icons over
+// whatever is behind them, so an opaque black margin would show up as black
+// corners on the desktop.
+func render(size int) *image.NRGBA {
 	w := size * supersample
-	hi := image.NewRGBA(image.Rect(0, 0, w, w))
+	hi := image.NewNRGBA(image.Rect(0, 0, w, w))
 	for py := 0; py < w; py++ {
 		for px := 0; px < w; px++ {
 			u := (float64(px) + 0.5) / float64(w)
@@ -58,12 +62,12 @@ func render(size int) *image.RGBA {
 			}
 			c := background(u, v)
 			if inArrowRight(u, v) {
-				c = blend(c, color.RGBA{255, 255, 255, 255}, 0.96)
+				c = blend(c, color.NRGBA{255, 255, 255, 255}, 0.96)
 			}
 			if inArrowLeft(u, v) {
-				c = blend(c, color.RGBA{94, 234, 212, 255}, 0.96)
+				c = blend(c, color.NRGBA{94, 234, 212, 255}, 0.96)
 			}
-			hi.SetRGBA(px, py, c)
+			hi.SetNRGBA(px, py, c)
 		}
 	}
 	return downsample(hi, size)
@@ -78,7 +82,7 @@ func inRoundedSquare(u, v, half, radius float64) bool {
 	return x*x+y*y <= radius*radius
 }
 
-func background(u, v float64) color.RGBA {
+func background(u, v float64) color.NRGBA {
 	t := (u + v) / 2
 	r := lerp(10, 20, t)
 	g := lerp(28, 76, t)
@@ -91,7 +95,7 @@ func background(u, v float64) color.RGBA {
 		g += (255 - g) * k * 0.20
 		b += (255 - b) * k * 0.20
 	}
-	return color.RGBA{uint8(r), uint8(g), uint8(b), 255}
+	return color.NRGBA{uint8(r), uint8(g), uint8(b), 255}
 }
 
 func inArrowRight(u, v float64) bool {
@@ -108,8 +112,8 @@ func inArrowLeft(u, v float64) bool {
 	return u >= 0.18 && u <= 0.39 && math.Abs(v-0.61) <= (u-0.18)*0.86
 }
 
-func blend(dst, src color.RGBA, a float64) color.RGBA {
-	return color.RGBA{
+func blend(dst, src color.NRGBA, a float64) color.NRGBA {
+	return color.NRGBA{
 		uint8(float64(dst.R)*(1-a) + float64(src.R)*a),
 		uint8(float64(dst.G)*(1-a) + float64(src.G)*a),
 		uint8(float64(dst.B)*(1-a) + float64(src.B)*a),
@@ -121,21 +125,33 @@ func lerp(a, b, t float64) float64 {
 	return a + (b-a)*t
 }
 
-func downsample(src *image.RGBA, size int) *image.RGBA {
-	dst := image.NewRGBA(image.Rect(0, 0, size, size))
+// downsample averages the supersampled canvas in premultiplied space so the
+// rounded outline keeps a soft, correct alpha ramp instead of a hard edge.
+func downsample(src *image.NRGBA, size int) *image.NRGBA {
+	dst := image.NewNRGBA(image.Rect(0, 0, size, size))
+	n := uint64(supersample * supersample)
 	for y := 0; y < size; y++ {
 		for x := 0; x < size; x++ {
-			var r, g, b uint32
+			var sa, sr, sg, sb uint64
 			for dy := 0; dy < supersample; dy++ {
 				for dx := 0; dx < supersample; dx++ {
-					c := src.RGBAAt(x*supersample+dx, y*supersample+dy)
-					r += uint32(c.R)
-					g += uint32(c.G)
-					b += uint32(c.B)
+					i := src.PixOffset(x*supersample+dx, y*supersample+dy)
+					a := uint64(src.Pix[i+3])
+					sa += a
+					sr += uint64(src.Pix[i]) * a
+					sg += uint64(src.Pix[i+1]) * a
+					sb += uint64(src.Pix[i+2]) * a
 				}
 			}
-			n := uint32(supersample * supersample)
-			dst.SetRGBA(x, y, color.RGBA{uint8(r / n), uint8(g / n), uint8(b / n), 255})
+			if sa == 0 {
+				continue
+			}
+			dst.SetNRGBA(x, y, color.NRGBA{
+				R: uint8(sr / sa),
+				G: uint8(sg / sa),
+				B: uint8(sb / sa),
+				A: uint8(sa / n),
+			})
 		}
 	}
 	return dst
