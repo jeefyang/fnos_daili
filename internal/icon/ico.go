@@ -226,7 +226,65 @@ func decodeICOBitmap(payload []byte, f icoFrame) (image.Image, error) {
 			}
 		}
 	}
+	// Some editors store 32-bit frames with premultiplied alpha, the layout
+	// Windows' AlphaBlend expects: at a soft edge the colour channels drop
+	// together with the alpha channel, so a white corner pixel with alpha 26 is
+	// stored as (38,38,38,26). Reading that as straight alpha paints a grey rim
+	// around the icon, which is glaring once a 48x48 frame is scaled up to 256.
+	// Straight frames keep the full colour at the edge (255,255,255,26) and are
+	// easy to tell apart from their own pixels, so both layouts stay supported.
+	if bitCount == 32 && sawAlpha && looksPremultiplied(img) {
+		unpremultiply(img)
+	}
 	return img, nil
+}
+
+func looksPremultiplied(img *image.NRGBA) bool {
+	b := img.Bounds()
+	var soft, matched int
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			c := img.NRGBAAt(x, y)
+			if c.A < 16 || c.A > 240 {
+				continue
+			}
+			soft++
+			max := c.R
+			if c.G > max {
+				max = c.G
+			}
+			if c.B > max {
+				max = c.B
+			}
+			if max < 64 {
+				continue
+			}
+			if diff := int(max) - int(c.A); diff > -20 && diff < 20+int(max)/5 {
+				matched++
+			}
+		}
+	}
+	return soft >= 8 && matched*4 >= soft*3
+}
+
+func unpremultiply(img *image.NRGBA) {
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			i := y*img.Stride + x*4
+			a := int(img.Pix[i+3])
+			if a == 0 || a == 255 {
+				continue
+			}
+			for _, k := range []int{0, 1, 2} {
+				v := int(img.Pix[i+k]) * 255 / a
+				if v > 255 {
+					v = 255
+				}
+				img.Pix[i+k] = byte(v)
+			}
+		}
+	}
 }
 
 func maskTransparent(row []byte, x int) bool {

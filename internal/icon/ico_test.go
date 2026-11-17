@@ -323,3 +323,78 @@ func TestNormalizeFaviconKeepsTransparentEdges(t *testing.T) {
 		t.Fatalf("transparent edge alpha = %d, want 0", a)
 	}
 }
+
+// bmp32Custom builds a 32-bit frame whose pixels come from px, so tests can
+// describe edge layouts that the fixed-colour helper cannot.
+func bmp32Custom(t *testing.T, w, h int, px func(x, y int) color.NRGBA) []byte {
+	t.Helper()
+	rowSize := ((32*w + 31) / 32) * 4
+	maskRow := ((w + 31) / 32) * 4
+	payload := make([]byte, 40+rowSize*h+maskRow*h)
+	binary.LittleEndian.PutUint32(payload[0:4], 40)
+	binary.LittleEndian.PutUint32(payload[4:8], uint32(w))
+	binary.LittleEndian.PutUint32(payload[8:12], uint32(2*h))
+	binary.LittleEndian.PutUint16(payload[12:14], 1)
+	binary.LittleEndian.PutUint16(payload[14:16], 32)
+	for y := 0; y < h; y++ {
+		row := payload[40+(h-1-y)*rowSize:]
+		for x := 0; x < w; x++ {
+			c := px(x, y)
+			p := row[x*4:]
+			p[0] = c.B
+			p[1] = c.G
+			p[2] = c.R
+			p[3] = c.A
+		}
+	}
+	return payload
+}
+
+// A frame that stores premultiplied colours (white edge pixel 128 with alpha
+// 107) must come out white, not grey: otherwise every scaled-up icon gets a
+// dirty rim.
+func TestDecodeICOUnpremultipliesSoftEdges(t *testing.T) {
+	const w, h = 16, 16
+	payload := bmp32Custom(t, w, h, func(x, y int) color.NRGBA {
+		switch {
+		case x < 4:
+			return color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+		case x == 4:
+			return color.NRGBA{R: 128, G: 128, B: 128, A: 107}
+		}
+		return color.NRGBA{}
+	})
+	ico := wrapICO(t, []byte{byte(w), byte(h)}, payload)
+	img, err := decodeICO(ico)
+	if err != nil {
+		t.Fatalf("decodeICO: %v", err)
+	}
+	got := img.(*image.NRGBA).NRGBAAt(4, 8)
+	if got.R < 250 || got.G < 250 || got.B < 250 || got.A < 100 {
+		t.Fatalf("soft pixel = %v, want white with alpha ~107", got)
+	}
+}
+
+// Straight-alpha frames already store the full colour at the edge and must be
+// left alone, or light edges would clip to white and dark ones stay dark.
+func TestDecodeICOLeavesStraightAlphaAlone(t *testing.T) {
+	const w, h = 16, 16
+	payload := bmp32Custom(t, w, h, func(x, y int) color.NRGBA {
+		switch {
+		case x < 4:
+			return color.NRGBA{R: 255, G: 255, B: 255, A: 255}
+		case x == 4:
+			return color.NRGBA{R: 255, G: 255, B: 255, A: 107}
+		}
+		return color.NRGBA{}
+	})
+	ico := wrapICO(t, []byte{byte(w), byte(h)}, payload)
+	img, err := decodeICO(ico)
+	if err != nil {
+		t.Fatalf("decodeICO: %v", err)
+	}
+	got := img.(*image.NRGBA).NRGBAAt(4, 8)
+	if got.R != 255 || got.G != 255 || got.B != 255 || got.A != 107 {
+		t.Fatalf("soft pixel = %v, want straight (255,255,255,107)", got)
+	}
+}
