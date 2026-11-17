@@ -103,6 +103,8 @@ sudo appcenter-cli list
 
 编辑已有应用会从第 1 步开始，目标地址可改；保存即重新打包并重装，appname 与入口端口保持不变。
 
+列表工具栏的“批量导入”可以一次装一批：选一个 JSON 文件或直接粘贴，先“预览”看哪些会新建、哪些被跳过（appname 冲突、字段不合法、文件内重复），确认后“开始导入”。导入会逐个探测目标、逐个安装，单条失败不影响其余条目；不可达的目标只建为草稿、不安装。JSON 字段与新建表单一致，示例见 [docs/examples/import-targets.json](docs/examples/import-targets.json)。
+
 真机部署路径、两个历史故障（空白窗口 / CGI 500）与排障顺序见
 [docs/research/manager-deployment.md](docs/research/manager-deployment.md)。
 
@@ -124,6 +126,7 @@ internal/spec/      ProxySpec 与校验
 internal/target/    target origin 规范化
 internal/assets/    内嵌默认图标
 tools/gen-icons/    重新生成默认图标
+docs/examples/      批量导入示例 JSON
 docs/specs/         实施规格
 docs/research/      调研笔记与真机验证记录
 ```

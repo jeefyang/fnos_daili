@@ -21,6 +21,7 @@
     iconRemove: false,
     iconFetched: false,
     iconLibrary: false,
+    importPlan: null,
     settings: { appname_prefix: 'proxy.', appname_suffix: '' },
     network: { known: false, lan: null, client_ip: '' }
   };
@@ -408,6 +409,144 @@
     });
   }
   function closeModal() { $('modalRoot').innerHTML = ''; }
+
+  // --- bulk import -------------------------------------------------------
+  function openImport() {
+    state.importPlan = null;
+    openModal('批量导入目标',
+      '<div class="alert info">JSON 里每个对象是一个目标，字段与“新建代理”一致：<span class="mono">target_url</span> 必填，<span class="mono">appname</span> 可省略（按全局前后缀自动生成）。与托管台或系统已有 appname 冲突的条目会跳过，不会覆盖，也不会改动已有目标。</div>' +
+      '<div class="field" style="margin-top:12px"><label for="impFile">选择 JSON 文件</label><input id="impFile" type="file" accept=".json,application/json"></div>' +
+      '<div class="field"><label for="impText">或直接粘贴</label><textarea id="impText" class="textarea mono" rows="10" spellcheck="false" placeholder="粘贴或选择 JSON 文件"></textarea><div class="help">也接受顶层是数组的文件。示例见仓库 docs/examples/import-targets.json。</div></div>' +
+      '<div id="impResult"></div>',
+      [
+        { label: '预览', onClick: function () { previewImport(); } },
+        { label: '开始导入', cls: 'primary', onClick: function () { startImport(); } }
+      ]);
+    var f = $('impFile');
+    if (f) f.addEventListener('change', onImportFile);
+  }
+
+  function onImportFile() {
+    var input = $('impFile');
+    if (!input || !input.files || !input.files.length) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var ta = $('impText');
+      if (ta) ta.value = String(reader.result || '');
+      toast('已读入 ' + input.files[0].name);
+    };
+    reader.readAsText(input.files[0]);
+  }
+
+  function importText() {
+    var ta = $('impText');
+    return ta ? ta.value.trim() : '';
+  }
+
+  function previewImport() {
+    var text = importText();
+    var box = $('impResult');
+    if (!text) { toast('先选择文件或粘贴 JSON', true); return; }
+    box.innerHTML = '<div class="muted" style="margin-top:12px">正在预检…</div>';
+    api('/api/import/preview', { method: 'POST', body: { text: text } }).then(function (plan) {
+      state.importPlan = plan;
+      box.innerHTML = renderImportPlan(plan);
+    }).catch(function (e) {
+      state.importPlan = null;
+      box.innerHTML = '<div class="alert bad" style="margin-top:12px">' + esc(msgOf(e)) + '</div>';
+    });
+  }
+
+  function importActionPill(action) {
+    return action === 'create'
+      ? '<span class="pill ok"><span class="dot"></span>新建</span>'
+      : '<span class="pill neutral"><span class="dot"></span>跳过</span>';
+  }
+
+  function renderImportPlan(plan) {
+    var rows = (plan.rows || []).map(function (r) {
+      return '<tr>' +
+        '<td class="mono">' + esc(r.index) + '</td>' +
+        '<td>' + importActionPill(r.action) + '</td>' +
+        '<td class="mono">' + esc(r.appname) + '</td>' +
+        '<td>' + esc(r.display_name) + '</td>' +
+        '<td class="mono">' + esc(r.target_url) + '</td>' +
+        '<td class="faint" style="font-size:12px">' + esc(r.reason || '') + '</td>' +
+        '</tr>';
+    }).join('');
+    var head = '<div class="alert ' + (plan.create ? 'info' : 'warn') + '" style="margin-top:12px">将新建 <b>' + plan.create + '</b> 个，跳过 <b>' + plan.skip + '</b> 个。确认无误后点“开始导入”。</div>';
+    return head + '<table style="margin-top:8px"><thead><tr><th>#</th><th>动作</th><th>appname</th><th>名称</th><th>目标</th><th>原因</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  function startImport() {
+    var text = importText();
+    if (!text) { toast('先选择文件或粘贴 JSON', true); return; }
+    if (!state.importPlan) { toast('先点“预览”确认要导入的条目', true); return; }
+    if (!state.importPlan.create) { toast('没有可导入的条目', true); return; }
+    var box = $('impResult');
+    box.innerHTML = '<div class="muted" style="margin-top:12px">正在创建目标并排队安装…</div>';
+    api('/api/import', { method: 'POST', body: { text: text, install: true } }).then(function (view) {
+      renderBatch(view);
+      if (view.id && view.status !== 'done') pollBatch(view.id);
+      if (view.status === 'done') finishBatch(view);
+    }).catch(function (e) {
+      box.innerHTML = '<div class="alert bad" style="margin-top:12px">' + esc(msgOf(e)) + '</div>';
+    });
+  }
+
+  function batchStatePill(stateName) {
+    var map = {
+      pending: ['排队中', 'neutral'],
+      probing: ['检测目标', 'info'],
+      installing: ['安装中', 'info'],
+      running: ['完成', 'ok'],
+      failed: ['失败', 'bad'],
+      draft: ['未安装（目标不可达）', 'warn']
+    };
+    var v = map[stateName] || [stateName || '未知', 'neutral'];
+    return '<span class="pill ' + v[1] + '"><span class="dot"></span>' + v[0] + '</span>';
+  }
+
+  function renderBatch(view) {
+    var box = $('impResult');
+    if (!box) return;
+    var rows = (view.items || []).map(function (it, i) {
+      return '<tr>' +
+        '<td class="mono">' + esc(it.index || i + 1) + '</td>' +
+        '<td class="mono">' + esc(it.appname) + '</td>' +
+        '<td>' + esc(it.display_name) + '</td>' +
+        '<td class="mono">' + esc(it.target_url) + '</td>' +
+        '<td>' + batchStatePill(it.state) + '</td>' +
+        '<td class="faint" style="font-size:12px;max-width:260px">' + esc(it.error || '') + '</td>' +
+        '</tr>';
+    }).join('');
+    var skipped = (view.skipped || []).map(function (r) {
+      return '<li><span class="mono">' + esc(r.appname) + '</span> — ' + esc(r.reason || '') + '</li>';
+    }).join('');
+    var head = '<div class="alert ' + (view.status === 'done' && !view.failed ? 'info' : 'warn') + '" style="margin-top:12px">' +
+      (view.status === 'done' ? '批量导入结束' : '正在执行') + '：共 ' + view.total + ' 个，完成 ' + (view.done || 0) + ' 个' +
+      (view.failed ? '，失败 <b>' + view.failed + '</b> 个' : '') + '。</div>';
+    var tail = skipped ? '<div class="field" style="margin-top:12px"><label>跳过的条目</label><ul class="muted" style="margin:6px 0 0 18px;font-size:12.5px">' + skipped + '</ul></div>' : '';
+    box.innerHTML = head + '<table style="margin-top:8px"><thead><tr><th>#</th><th>appname</th><th>名称</th><th>目标</th><th>状态</th><th>说明</th></tr></thead><tbody>' + rows + '</tbody></table>' + tail;
+  }
+
+  function pollBatch(id) {
+    api('/api/import/' + encodeURIComponent(id)).then(function (view) {
+      if (!document.getElementById('impResult')) return;
+      renderBatch(view);
+      if (view.status === 'done') { finishBatch(view); return; }
+      setTimeout(function () { pollBatch(id); }, 1200);
+    }).catch(function () {
+      if (document.getElementById('impResult')) setTimeout(function () { pollBatch(id); }, 2500);
+    });
+  }
+
+  function finishBatch(view) {
+    loadListCached().catch(function () {});
+    var okCount = (view.done || 0) - (view.failed || 0);
+    if (view.failed) toast('导入完成：成功 ' + okCount + ' 个，失败 ' + view.failed + ' 个', true);
+    else toast('导入完成：' + okCount + ' 个应用已运行');
+  }
 
   function switchTab(name) {
     state.tab = name;
@@ -1038,6 +1177,7 @@
 
     $('settingsBtn').addEventListener('click', openSettings);
     $('newBtn').addEventListener('click', startNew);
+    $('importBtn').addEventListener('click', openImport);
     $('wizardBackBtn').addEventListener('click', function () {
       switchTab('list');
       loadListCached();

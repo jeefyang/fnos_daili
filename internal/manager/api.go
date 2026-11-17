@@ -48,6 +48,9 @@ func (s *Service) Handler(ui http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/targets/{id}/log", s.handleLog)
 	mux.HandleFunc("POST /api/targets/{id}/test-target", s.handleTestTarget)
 	mux.HandleFunc("POST /api/test-target", s.handleTestTarget)
+	mux.HandleFunc("POST /api/import/preview", s.handleImportPreview)
+	mux.HandleFunc("POST /api/import", s.handleImport)
+	mux.HandleFunc("GET /api/import/{id}", s.handleBatch)
 	mux.HandleFunc("POST /api/favicon", s.handleFavicon)
 	mux.HandleFunc("POST /api/icon-library", s.handleIconLibrary)
 	mux.HandleFunc("GET /api/appnames/check", s.handleAppNameCheck)
@@ -413,6 +416,76 @@ func redactLine(line string) string {
 		}
 	}
 	return line
+}
+
+// importRequest carries a bulk import either as raw JSON text (what the file
+// picker produces) or as already-decoded targets.
+type importRequest struct {
+	Text      string      `json:"text"`
+	Targets   []SpecInput `json:"targets"`
+	Install   *bool       `json:"install"`
+	SkipProbe bool        `json:"skip_probe"`
+}
+
+func (req importRequest) items() ([]SpecInput, error) {
+	if strings.TrimSpace(req.Text) != "" {
+		return parseImportDocument([]byte(req.Text))
+	}
+	if req.Targets == nil {
+		return nil, errors.New("没有要导入的目标")
+	}
+	return req.Targets, nil
+}
+
+func (s *Service) handleImportPreview(w http.ResponseWriter, r *http.Request) {
+	var body importRequest
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	items, err := body.items()
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_import", err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	plan, _ := s.PlanImport(ctx, items, s.Settings().DNSServer)
+	writeJSON(w, http.StatusOK, plan)
+}
+
+func (s *Service) handleImport(w http.ResponseWriter, r *http.Request) {
+	var body importRequest
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
+		return
+	}
+	items, err := body.items()
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_import", err.Error())
+		return
+	}
+	install := true
+	if body.Install != nil {
+		install = *body.Install
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+	view, err := s.ImportBulk(ctx, items, install, body.SkipProbe)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, view)
+}
+
+func (s *Service) handleBatch(w http.ResponseWriter, r *http.Request) {
+	view, ok := s.Batch(r.PathValue("id"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "批量任务不存在")
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (s *Service) handleTestTarget(w http.ResponseWriter, r *http.Request) {

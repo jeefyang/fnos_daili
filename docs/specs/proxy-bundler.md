@@ -674,8 +674,15 @@ esac
 | PUT | `/api/settings` | 校验并保存全局前缀/后缀与默认 DNS；不改已创建 target |
 | GET | `/api/network` | `{client_ip, lan, known}`；`lan` 未知时为 null |
 | GET | `/api/operations/{id}` | 异步操作进度 |
+| POST | `/api/import/preview` | 批量预检：body `{text?, targets?, install?, skip_probe?}`；返回 `{rows[], create, skip}`，不写 state |
+| POST | `/api/import` | 批量创建/安装：同 body，`install` 默认 true；返回 `202 {id, status, total, items[], skipped[]}` |
+| GET | `/api/import/{id}` | 批量任务进度 `{id, status, install, total, done, failed, items[], skipped[], started_at, finished_at}` |
 
 - `apply`/`delete`/`rollback` 立即返回 `202 {operation_id}`；进度写 state 的 `last_operation`，前端轮询直到终态再刷新列表。
+- 批量导入的 JSON 形状：顶层是数组，或 `{"targets":[...]}`；每个对象的字段与 `POST /api/targets` 请求体一致（`target_url` 必填），示例见 `docs/examples/import-targets.json`。`text` 优先于 `targets`。
+- 预检逐条跑同一套 `spec.NormalizeProxySpec`；appname 为空时按全局前缀/后缀 + display_name（或目标主机名）生成 `slug`，最多加 64 次数字后缀；与 state 或 `appcenter-cli list` 冲突、文件内重复、字段非法的行标 `skip` 并给出原因，其余标 `create`。预检不写任何东西。
+- 执行时 `install=true`：整个批次持有全局 CLI 锁（§9.6），逐条先探测目标可达（reverse 模式，direct 跳过），不可达的保持 `draft` 并记失败原因，其余继续安装并轮询到 `running`；单条失败不中断后续条目，最终 `status=done`，`failed` 计数与每条的 `error` 可供前端展示。`install=false` 只建 draft，批次立即 `done`。
+- 导入不改动任何已有 target 的 appname、端口与已装状态；冲突行只跳过，不改名不覆盖。
 - `settings` 的 prefix/suffix 各 ≤16 字节、合计 ≤24，只允许 ASCII 字母数字 `._-`；prefix 非空时首字符必须是字母或数字；用 `prefix+"app"+suffix` 过一遍 appname 校验。保存只影响新建时建议，已创建的 appname 已锁定。`dns_server` 是新建应用时预填的默认解析器（空 = 系统），只影响之后新建或重新保存的 target，不自动重装已装应用。
 - `network` 从 `X-Daili-Client-IP`（CGI shim 写入）→ `X-Forwarded-For` → `X-Real-IP` → `RemoteAddr` 取第一个合法 IP；私网/回环/链路本地为 `lan=true`，公网为 `false`，取不到为 null。仅用于入口提示，不参与鉴权。
 - `test-target` 用同一目标拦截；请求体可带 `dns_server`（该目标表单里的值），缺省回退全局设置；返回 `{reachable, status, elapsed_ms, error, detail}`；`error` 是稳定类别（`dns_timeout`、`dns_failure`、`connect_failed`、`loopback`、`port` 等），`detail` 是截断到 160 字节、去掉换行的底层错误，只用于排障，不含口令与请求头。测试超时 10s，掩码直连模式跳过目标拦截。
@@ -784,6 +791,7 @@ T2 的“端口 bind 预检”恢复：代理入口使用独立端口，分配�
   - 当前域名后缀属于 `fnos.net` / `5ddd.com` / `trzznas.com`（FN Connect 公网访问）时，入口为 `https://<fnDomain>.<当前域名>/`，其中 `fnDomain` = 入口键（`desktop_applaunchname`）小写、点换成连字符，默认入口名 `Application` 省略；本项目入口键固定 `<appname>.main`，故为 `<appname 点→连字符>-main`。此时不再提示端口不可达，改为提示“需在 FN Connect 里发布该应用”。
   - 其余情况（局域网 IP、自定义域名）仍为 `http://<host>:<port>/`，`/api/network` 判定为外网时显示“外网访问，端口通常不可达”，点击入口先弹提示（复制地址 / 仍然尝试）。
 - FN Connect 子域规则属于从官方前端行为与实例归纳的推断，命中不到时退化为端口 URL，不能让入口无法显示。
+- 批量导入入口在列表页工具栏「批量导入」：弹窗内选择 JSON 文件或直接粘贴 → 「预览」展示“将新建 N 个 / 跳过 M 个”与逐行原因 → 「开始导入」显示每行状态（排队/检测目标/安装中/完成/失败/未安装）并轮询到结束，结束后自动刷新列表。
 - 不做实时健康检查；提供刷新。
 - 空状态给“新建代理应用”按钮。
 - 所有错误用统一 toast + 字段级错误；不显示上游/堆栈。

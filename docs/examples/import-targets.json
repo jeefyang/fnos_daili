@@ -1,0 +1,23 @@
+{
+  "targets": [
+    {
+      "display_name": "家里的 Home Assistant",
+      "target_url": "http://192.168.1.10:8123",
+      "mode": "reverse",
+      "desc": "客厅那台 HA"
+    },
+    {
+      "display_name": "公司 NAS 面板",
+      "target_url": "https://nas.example.com:5001",
+      "mode": "reverse",
+      "skip_tls_verify": true,
+      "dns_server": "223.5.5.5"
+    },
+    {
+      "display_name": "路由器",
+      "target_url": "http://192.168.1.1",
+      "mode": "direct",
+      "appname": "proxy.router"
+    }
+  ]
+}

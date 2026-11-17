@@ -63,6 +63,7 @@ type Service struct {
 	running   map[string]bool
 	ops       map[string]string
 	done      map[string]state.Operation
+	batches   map[string]*batchRun
 }
 
 // UnmanagedApp is an installed app that is not in state but has a package dir.
@@ -195,6 +196,7 @@ func New(cfg Config) (*Service, error) {
 		running: map[string]bool{},
 		ops:     map[string]string{},
 		done:    map[string]state.Operation{},
+		batches: map[string]*batchRun{},
 	}, nil
 }
 

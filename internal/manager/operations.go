@@ -51,31 +51,48 @@ func (s *Service) Apply(id, kind string) (string, error) {
 		s.mu.Unlock()
 		return "", errConflict
 	}
+	opID, err := s.beginOperationLocked(t, kind)
+	s.mu.Unlock()
+	if err != nil {
+		return "", err
+	}
+
+	go func() {
+		s.opMu.Lock()
+		defer s.opMu.Unlock()
+		s.executeOperation(id, kind, opID)
+	}()
+	return opID, nil
+}
+
+// beginOperationLocked marks a target as busy and records the operation. The
+// caller must hold s.mu; the state file is written before the work starts so a
+// restart can tell an interrupted operation from an idle target.
+func (s *Service) beginOperationLocked(t *state.Target, kind string) (string, error) {
 	opID := newID()
 	now := s.now()
 	t.Runtime.LastOperation = &state.Operation{ID: opID, Kind: kind, Status: state.OpRunning, Step: "validate", StartedAt: now}
 	t.Runtime.State = state.StateBuilding
 	t.Runtime.LastError = ""
 	t.Runtime.UpdatedAt = now
-	s.running[id] = true
-	s.ops[opID] = id
+	s.running[t.Spec.ID] = true
+	s.ops[opID] = t.Spec.ID
 	if err := s.saveLocked(); err != nil {
-		delete(s.running, id)
+		delete(s.running, t.Spec.ID)
 		delete(s.ops, opID)
-		s.mu.Unlock()
 		return "", err
 	}
-	s.mu.Unlock()
-
-	go func() {
-		s.opMu.Lock()
-		defer s.opMu.Unlock()
-		ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
-		defer cancel()
-		err := s.runApply(ctx, id, kind, opID)
-		s.finishOperation(id, opID, err)
-	}()
 	return opID, nil
+}
+
+// executeOperation runs one install/upgrade/reinstall to completion and
+// records the outcome. Callers hold the global CLI lock.
+func (s *Service) executeOperation(id, kind, opID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
+	defer cancel()
+	err := s.runApply(ctx, id, kind, opID)
+	s.finishOperation(id, opID, err)
+	return err
 }
 
 func inferKind(st string) string {
