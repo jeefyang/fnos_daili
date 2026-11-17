@@ -651,11 +651,29 @@
       if (r.reachable) {
         box.innerHTML = '<div class="alert ok">TCP 可达，耗时 ' + r.elapsed_ms + ' ms。保存时仍会再做一次目标检查。</div>';
       } else {
-        box.innerHTML = '<div class="alert err">不可达：' + esc(r.error || 'unknown') + '（' + r.elapsed_ms + ' ms）。这不阻止保存，但生成后可能打不开。</div>';
+        box.innerHTML = '<div class="alert err">不可达：' + esc(targetErrorText(r)) + '（' + r.elapsed_ms + ' ms）。这不阻止保存，但生成后可能打不开。' +
+          (r.detail ? '<div class="detail">' + esc(r.detail) + '</div>' : '') + '</div>';
       }
     }).catch(function (e) {
       box.innerHTML = '<div class="alert err">测试失败：' + esc(msgOf(e)) + '</div>';
     });
+  }
+
+  var TARGET_ERROR_TEXT = {
+    dns_timeout: 'DNS 解析超时（NAS 自己的域名解析没通，和端口无关）',
+    dns_failure: 'DNS 解析失败',
+    connect_failed: 'TCP 连接失败（端口不通或被防火墙拦）',
+    loopback: '目标被拦截（回环地址，需在高级里允许本机目标）',
+    unspecified: '目标被拦截（未指定地址）',
+    linklocal: '目标被拦截（链路本地地址）',
+    multicast: '目标被拦截（多播地址）',
+    reserved: '目标被拦截（保留地址）',
+    port: '目标被拦截（端口在禁止范围内）',
+    invalid: '目标地址不合法'
+  };
+
+  function targetErrorText(r) {
+    return TARGET_ERROR_TEXT[r.error] || r.error || 'unknown';
   }
 
   function validAppName(s) {

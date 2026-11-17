@@ -669,7 +669,7 @@ esac
 - `apply`/`delete`/`rollback` 立即返回 `202 {operation_id}`；进度写 state 的 `last_operation`，前端轮询直到终态再刷新列表。
 - `settings` 的 prefix/suffix 各 ≤16 字节、合计 ≤24，只允许 ASCII 字母数字 `._-`；prefix 非空时首字符必须是字母或数字；用 `prefix+"app"+suffix` 过一遍 appname 校验。保存只影响新建时建议，已创建的 appname 已锁定。
 - `network` 从 `X-Daili-Client-IP`（CGI shim 写入）→ `X-Forwarded-For` → `X-Real-IP` → `RemoteAddr` 取第一个合法 IP；私网/回环/链路本地为 `lan=true`，公网为 `false`，取不到为 null。仅用于入口提示，不参与鉴权。
-- `test-target` 用同一目标拦截；返回 `{reachable, status, elapsed_ms, error}`；错误只给类别。
+- `test-target` 用同一目标拦截；返回 `{reachable, status, elapsed_ms, error, detail}`；`error` 是稳定类别（`dns_timeout`、`dns_failure`、`connect_failed`、`loopback`、`port` 等），`detail` 是截断到 160 字节、去掉换行的底层错误，只用于排障，不含口令与请求头。测试超时 10s，掩码直连模式跳过目标拦截。
 - `appnames/check` 规则：正则、保留名、state 冲突、`appcenter-cli list` 冲突。
 - 图标接口只返回 state 里的 PNG 字节；`size=64` 取 64 档，缺省 256 档；`Cache-Control: no-store`，避免换图后浏览器继续用旧图。
 - 创建/更新请求体上限 8MiB，容纳 2MiB 图片的 base64 与 JSON 开销。

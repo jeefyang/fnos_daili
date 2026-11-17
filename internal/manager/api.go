@@ -423,7 +423,7 @@ func (s *Service) handleTestTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	start := time.Now()
-	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	u, _ := url.Parse(norm)
 	port := 80
@@ -433,11 +433,12 @@ func (s *Service) handleTestTarget(w http.ResponseWriter, r *http.Request) {
 	if p := u.Port(); p != "" {
 		port, _ = strconv.Atoi(p)
 	}
-	res := map[string]any{"reachable": false, "status": 0, "elapsed_ms": 0, "error": ""}
+	res := map[string]any{"reachable": false, "status": 0, "elapsed_ms": 0, "error": "", "detail": ""}
 	if body.Mode != "direct" {
 		g := guard.Guard{}
 		if err := g.CheckHost(ctx, u.Hostname(), port); err != nil {
-			res["error"] = guardCategory(err)
+			res["error"], res["detail"] = targetCheckError(err)
+			s.logger.Printf("test-target %s: %s (%s)", norm, res["error"], res["detail"])
 			res["elapsed_ms"] = time.Since(start).Milliseconds()
 			writeJSON(w, http.StatusOK, res)
 			return
@@ -447,6 +448,8 @@ func (s *Service) handleTestTarget(w http.ResponseWriter, r *http.Request) {
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(u.Hostname(), strconv.Itoa(port)))
 	if err != nil {
 		res["error"] = "connect_failed"
+		res["detail"] = shortError(err)
+		s.logger.Printf("test-target %s: connect_failed (%s)", norm, res["detail"])
 	} else {
 		conn.Close()
 		res["reachable"] = true
@@ -455,16 +458,42 @@ func (s *Service) handleTestTarget(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
-func guardCategory(err error) string {
+// targetCheckError turns a guard failure into a stable category plus a short,
+// secret-free hint for the operator. DNS errors are split into timeout and
+// generic failure so a silent NAS resolver can be told apart from a bad host.
+func targetCheckError(err error) (string, string) {
 	var ge *guard.Error
 	if errors.As(err, &ge) {
-		return ge.Reason
+		return ge.Reason, ""
 	}
 	var re *guard.ResolveError
 	if errors.As(err, &re) {
-		return "resolve_failed"
+		if isTimeout(re.Err) {
+			return "dns_timeout", shortError(re.Err)
+		}
+		return "dns_failure", shortError(re.Err)
 	}
-	return "blocked"
+	return "blocked", shortError(err)
+}
+
+func isTimeout(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
+}
+
+// shortError collapses an error to one line of at most 160 bytes.
+func shortError(err error) string {
+	if err == nil {
+		return ""
+	}
+	s := strings.Join(strings.Fields(err.Error()), " ")
+	if len(s) > 160 {
+		s = s[:160] + "…"
+	}
+	return s
 }
 
 func (s *Service) handleAppNameCheck(w http.ResponseWriter, r *http.Request) {

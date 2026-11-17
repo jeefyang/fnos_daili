@@ -1,12 +1,16 @@
 package manager
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/jeefyang/fnos_daili/internal/guard"
 	"github.com/jeefyang/fnos_daili/internal/state"
 )
 
@@ -198,5 +202,29 @@ func TestIndexInjectsCSRFToken(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), s.Token()) {
 		t.Fatal("index does not contain the CSRF token")
+	}
+}
+
+func TestTargetCheckErrorClassifiesDNS(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"timeout", &guard.ResolveError{Host: "a.example", Err: context.DeadlineExceeded}, "dns_timeout"},
+		{"dns-error", &guard.ResolveError{Host: "a.example", Err: &net.DNSError{Err: "no such host", Name: "a.example", IsNotFound: true}}, "dns_failure"},
+		{"guard", &guard.Error{Reason: "loopback"}, "loopback"},
+	}
+	for _, c := range cases {
+		got, detail := targetCheckError(c.err)
+		if got != c.want {
+			t.Fatalf("%s: got %q want %q", c.name, got, c.want)
+		}
+		if c.want != "loopback" && detail == "" {
+			t.Fatalf("%s: expected a detail", c.name)
+		}
+	}
+	if got, _ := targetCheckError(errors.New("boom")); got != "blocked" {
+		t.Fatalf("generic error = %q", got)
 	}
 }
