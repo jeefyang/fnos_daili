@@ -35,9 +35,10 @@ type Set struct {
 }
 
 // Normalize center-crops the source to a square and produces 256px and 64px
-// PNGs. It accepts PNG and JPEG, keeps alpha, and never upscales beyond 256px.
+// PNGs. It accepts PNG, JPEG, GIF, BMP, WebP and ICO, converts everything to
+// PNG, keeps alpha, and never upscales beyond 256px.
 func Normalize(data []byte) (Set, error) {
-	return normalize(data, MinSide, false)
+	return normalize(data, MinSide, true)
 }
 
 // NormalizeFavicon is Normalize for a site icon fetched from a target: it also
@@ -57,6 +58,11 @@ func normalize(data []byte, minSide int, allowICO bool) (Set, error) {
 	src, width, height, err := decodeImage(data, allowICO)
 	if err != nil {
 		return zero, err
+	}
+	// ICO frames are routinely 32x32 even when the artwork is fine, so an
+	// uploaded .ico is held to the same floor as a fetched site icon.
+	if allowICO && isICO(data) {
+		minSide = MinFaviconSide
 	}
 	if width < minSide || height < minSide {
 		return zero, fmt.Errorf("image must be at least %dx%d, got %dx%d", minSide, minSide, width, height)
@@ -123,16 +129,13 @@ func decodeImage(data []byte, allowICO bool) (image.Image, int, int, error) {
 	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
-		if allowICO {
-			return nil, 0, 0, fmt.Errorf("not a PNG, JPEG, GIF, BMP, WebP, or ICO image: %w", err)
+		if hint := formatHint(data); hint != "" {
+			return nil, 0, 0, fmt.Errorf("not a PNG, JPEG, GIF, BMP, WebP, or ICO image: detected %s", hint)
 		}
-		return nil, 0, 0, fmt.Errorf("not a PNG, JPEG, GIF, BMP, or WebP image: %w", err)
+		return nil, 0, 0, fmt.Errorf("not a PNG, JPEG, GIF, BMP, WebP, or ICO image: %w", err)
 	}
 	if !supportedFormat(format) {
-		if allowICO {
-			return nil, 0, 0, fmt.Errorf("unsupported image format %q; use PNG, JPEG, GIF, BMP, WebP, or ICO", format)
-		}
-		return nil, 0, 0, fmt.Errorf("unsupported image format %q; use PNG, JPEG, GIF, BMP, or WebP", format)
+		return nil, 0, 0, fmt.Errorf("unsupported image format %q; use PNG, JPEG, GIF, BMP, WebP, or ICO", format)
 	}
 	if int64(cfg.Width)*int64(cfg.Height) > MaxPixels {
 		return nil, 0, 0, fmt.Errorf("image has too many pixels (max %d)", MaxPixels)
@@ -152,6 +155,22 @@ func supportedFormat(format string) bool {
 		return true
 	}
 	return false
+}
+
+// formatHint names the container we saw when no decoder claimed the bytes, so
+// the UI can say "this is an SVG/AVIF" instead of a bare unknown-format error.
+func formatHint(data []byte) string {
+	switch {
+	case isICO(data):
+		return "ICO"
+	case len(data) >= 12 && string(data[0:4]) == "RIFF" && string(data[8:12]) == "WEBP":
+		return "WebP"
+	case bytes.HasPrefix(bytes.TrimSpace(data), []byte("<svg")), bytes.Contains(data[:min(len(data), 512)], []byte("<svg")):
+		return "SVG (unsupported)"
+	case len(data) >= 12 && string(data[4:8]) == "ftyp":
+		return "AVIF/HEIC (unsupported)"
+	}
+	return ""
 }
 
 func encodePNG(img image.Image) ([]byte, error) {

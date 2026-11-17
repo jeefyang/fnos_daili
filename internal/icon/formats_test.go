@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/gif"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -89,7 +90,11 @@ func TestNormalizeConvertsWebP(t *testing.T) {
 }
 
 func TestNormalizeRejectsSVG(t *testing.T) {
-	if _, err := Normalize([]byte(" <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"128\" height=\"128\"></svg>")); err == nil {
+	_, err := Normalize([]byte(" <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"128\" height=\"128\"></svg>"))
+	if err == nil {
 		t.Fatal("expected an error for SVG input")
+	}
+	if !strings.Contains(err.Error(), "SVG") {
+		t.Fatalf("error does not name the detected format: %v", err)
 	}
 }

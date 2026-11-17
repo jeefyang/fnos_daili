@@ -136,7 +136,7 @@ type BasicAuth struct {
 | `allow_loopback` | 仅 reverse；打开只放行回环，不放行链路本地/多播/端口拒绝 |
 | `dns_server` | 仅 reverse；空串 = 用系统解析器；非空必须是 IP 字面量（端口固定 53，不接受 `host:port` 或主机名）；该解析器同时用于目标拦截的解析与出站拨号，TLS SNI / 证书校验仍用原主机名 |
 
-图标不属于 `ProxySpec`，而是 target 的可选附件：API 输入用 `icon_data`（base64 data URL，PNG/JPEG/WebP/BMP/GIF/ICO，≤2MB，≥64×64，≤16M 像素；非 PNG 一律解码后转 PNG）或 `remove_icon`（二者互斥），输出用 `has_icon`。托管台在保存时把图统一裁成 256 与 64 两档 PNG，存 state 的 `custom_icon_64` / `custom_icon_256`；生成包时替换内置图标。
+图标不属于 `ProxySpec`，而是 target 的可选附件：API 输入用 `icon_data`（base64 data URL，PNG/JPEG/WebP/BMP/GIF/ICO，≤2MB，≤16M 像素，普通图 ≥64×64、ICO 帧 ≥16×16；非 PNG 一律解码后转 PNG）或 `remove_icon`（二者互斥），输出用 `has_icon`。托管台在保存时把图统一裁成 256 与 64 两档 PNG，存 state 的 `custom_icon_64` / `custom_icon_256`；生成包时替换内置图标。
 
 `POST /api/favicon` 供“从站点获取”按钮使用：输入 `target_url`、`dns_server`、`skip_tls_verify`、`allow_loopback`（后三者缺省取表单/全局设置），托管台用与代理运行时相同的解析器、目标拦截和 TLS 策略访问目标，先读页面里的 web app manifest（`<link rel=manifest>`，取最大的 `icons[].src`），再读 `<link rel=icon|apple-touch-icon>`（按 `sizes` 从大到小），再试 `/apple-touch-icon.png`、`/apple-touch-icon-precomposed.png`，最后回退 `/favicon.ico`，用 `icon.NormalizeFavicon` 归一化。favicon 解码接受 PNG/JPEG/GIF/BMP/WebP/ICO：ICO 取最大帧，支持 PNG 帧与 32/24/8/4/1 位 BMP 帧（含 AND mask 透明），源图最小 16×16；小于 256 的源图用 Mitchell 三次核放大（无过冲，不留亮边与台阶），大于 256 用 CatmullRom 缩小，缩放后把 alpha 1..7 与 248..254 钳到 0/255。成功返回 `{"icon_data": "data:image/png;base64,..."}`（256 档），前端把它当作待保存的 `icon_data`；找不到图标返回 404 `favicon_not_found`，网络/解析失败返回 502 `favicon_failed`。
 

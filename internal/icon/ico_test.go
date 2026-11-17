@@ -154,9 +154,25 @@ func TestDecodeICOTreatsZeroAlphaAsOpaque(t *testing.T) {
 	}
 }
 
-func TestNormalizeRejectsICO(t *testing.T) {
-	if _, err := Normalize(bmp32ICO(t, 64, 64, 255)); err == nil {
-		t.Fatal("upload path accepted ICO")
+func TestNormalizeAcceptsICO(t *testing.T) {
+	set, err := Normalize(bmp32ICO(t, 64, 64, 255))
+	if err != nil {
+		t.Fatalf("upload path rejected ICO: %v", err)
+	}
+	if len(set.Icon256) == 0 || len(set.Icon64) == 0 {
+		t.Fatal("empty icon")
+	}
+}
+
+func TestNormalizeAcceptsSmallICO(t *testing.T) {
+	// A 32x32 .ico is common even for crisp artwork, so uploads use the same
+	// 16px floor as fetched site icons.
+	set, err := Normalize(bmp32ICO(t, 32, 32, 255))
+	if err != nil {
+		t.Fatalf("upload path rejected a 32x32 ICO: %v", err)
+	}
+	if len(set.Icon256) == 0 {
+		t.Fatal("empty icon")
 	}
 }
 
