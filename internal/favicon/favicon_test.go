@@ -190,6 +190,43 @@ func TestFetchSkipsUnusableCandidate(t *testing.T) {
 	}
 }
 
+func TestGetErrorHidesQuery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	_, err := get(context.Background(), srv.Client(), srv.URL+"/x.png?token=abc", 1024, "image/*")
+	if err == nil {
+		t.Fatal("404 accepted")
+	}
+	if strings.Contains(err.Error(), "abc") {
+		t.Fatalf("error leaks query: %v", err)
+	}
+	if !strings.Contains(err.Error(), "/x.png") {
+		t.Fatalf("error lost the path: %v", err)
+	}
+}
+
+func TestGetTransportErrorHidesQuery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	target := srv.URL + "/x.png?token=abc"
+	srv.Close()
+	_, err := get(context.Background(), srv.Client(), target, 1024, "image/*")
+	if err == nil {
+		t.Fatal("closed server accepted")
+	}
+	if strings.Contains(err.Error(), "abc") {
+		t.Fatalf("transport error leaks query: %v", err)
+	}
+}
+
+func TestRedactURL(t *testing.T) {
+	got := redactURL("https://user:pw@example.com:8443/a/b.png?x=1#f")
+	if got != "https://example.com:8443/a/b.png" {
+		t.Fatalf("redactURL = %q", got)
+	}
+}
+
 func TestFetchRejectsInvalidOrigin(t *testing.T) {
 	if _, err := Fetch(context.Background(), http.DefaultClient, "ftp://x"); err == nil {
 		t.Fatal("ftp origin accepted")

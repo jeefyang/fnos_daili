@@ -60,7 +60,7 @@ func Fetch(ctx context.Context, client *http.Client, origin string) (icon.Set, e
 		}
 		set, err := icon.NormalizeFavicon(data)
 		if err != nil {
-			lastErr = fmt.Errorf("%s: %w", cand, err)
+			lastErr = fmt.Errorf("%s: %w", redactURL(cand), err)
 			tried++
 			continue
 		}
@@ -81,21 +81,45 @@ func get(ctx context.Context, client *http.Client, rawURL string, limit int64, a
 	req.Header.Set("Accept", accept)
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, redactError(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
-		return nil, fmt.Errorf("GET %s: %s", rawURL, resp.Status)
+		return nil, fmt.Errorf("GET %s: %s", redactURL(rawURL), resp.Status)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, err
 	}
 	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("GET %s: body larger than %d bytes", rawURL, limit)
+		return nil, fmt.Errorf("GET %s: body larger than %d bytes", redactURL(rawURL), limit)
 	}
 	return data, nil
+}
+
+// redactError strips the query from the URL http.Client embeds in transport
+// errors, so a site token never reaches the manager log.
+func redactError(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) && ue.URL != "" {
+		ue.URL = redactURL(ue.URL)
+	}
+	return err
+}
+
+// redactURL drops the query, userinfo, and fragment so error text and logs
+// never carry a site's tokens.
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "invalid-url"
+	}
+	u.RawQuery = ""
+	u.ForceQuery = false
+	u.Fragment = ""
+	u.User = nil
+	return u.String()
 }
 
 var (
