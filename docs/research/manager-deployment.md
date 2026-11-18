@@ -65,3 +65,12 @@
 3. `cat /vol1/@appdata/daili.manager/manager.log`：应有 `started app=daili.manager`；CGI 打不开日志时会回退 stderr。
 4. 直接请求 `https://<host>/cgi/ThirdParty/daili.manager/index.cgi/`：500 说明 CGI 层没执行或 shim 找不到路径。
 5. `ps -ef | grep bin/manager`：进程在不在、是不是 root、socket 路径对不对。
+
+## 已验证的流程（2026-11-18 真机）
+
+- **安装形态**：`run-as root` + manifest 不写 `install_type` 的托管台包能正常安装、启动、长期运行；之前记为“未验证风险”的这一条可以撤销。
+- **基础闭环**：安装托管台 → 打开 `/cgi/ThirdParty/daili.manager/index.cgi/` → 四步建反代目标 → 代理应用 running → 入口照常打开 → 卸载并清记录。
+- **备份还原整圈**：列表「导出全部」→ 卸载并重装 `daili.manager`（state 丢失）→ 导入那份 JSON、勾选「同时还原全局设置」→ 已装同名应用按“接管”走一遍卸载重装，端口沿用备份里的值，图标与 bcrypt 口令哈希保持不变。
+- **列表交互**：两个页签（已托管 / 系统里已有）、两处应用图标（已托管用 target 图标或默认图，未纳管读安装目录里的真实图标）、删除即时反馈、批量删除（每删完一条立刻刷新，不再残留“运行中”）、小屏卡片布局，均已真机确认。
+
+仍未真机验收：真实站点整站反代（绝对路径资源）、直连 302、Basic Auth 401、重启后对账、日志脱敏抽查。
